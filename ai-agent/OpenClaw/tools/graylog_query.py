@@ -108,7 +108,7 @@ def query(device, interface=None, neighbor=None, event="all", seconds=300, limit
     return result
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", required=True)
     parser.add_argument("--interface")
@@ -116,7 +116,7 @@ def main():
     parser.add_argument("--event", choices=EVENTS, default="all")
     parser.add_argument("--seconds", type=int, default=300)
     parser.add_argument("--limit", type=int, default=20)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         result = query(args.device, args.interface, args.neighbor, args.event, args.seconds, args.limit)
     except urllib.error.HTTPError as exc:
