@@ -1,38 +1,48 @@
 # Seguridad de IXP
 
-## Estado de la remediación
-
-El 2026-10-18 se comprobó con `git ls-remote` que GitHub `main` apunta a `<commit-retirado>`. Ese commit contiene los tokens literales de los Skills y el `.env` de Graylog. Por tanto, no son únicamente commits locales. Posteriormente se reescribió y publicó el historial limpio; consultar [el informe de limpieza](refactor/SECURITY_CLEANUP.md).
-
-Los tokens se retiraron de los Skills. `.env` queda excluido del seguimiento, con su archivo local conservado para no romper una instalación existente. Las plantillas no contienen credenciales. Los ejemplos SNMP ya no incluyen la comunidad literal. El setup deja de imprimir el secret y conserva secretos de instalaciones existentes; no se debe regenerar `GRAYLOG_PASSWORD_SECRET` arbitrariamente porque se usa para datos cifrados.
-
-## Acciones operativas necesarias
+## Acciones pendientes
 
 1. Revocar los tokens anteriores en Graylog y LibreNMS, emitir credenciales de consulta con mínimo privilegio y actualizar el entorno del proceso que ejecuta las herramientas.
-2. Revisar el `.env` expuesto: cambiar el password admin, las credenciales reutilizadas y la comunidad SNMP si estaba en uso. Migrar a SNMPv3 cuando sea viable. Cambiar el secret de cifrado requiere el procedimiento compatible con la versión de Graylog y un respaldo; no ejecutar setup para rotarlo.
-3. Revisar accesos y logs de autenticación de las plataformas. Esta revisión del repositorio no prueba ni descarta uso indebido.
-4. Coordinar la limpieza del historial publicado con todos los colaboradores, incluyendo ramas/tags afectados y clones. Eliminar el archivo del commit nuevo no lo borra del historial. No hacer force-push sin esa coordinación. La revocación es necesaria aunque se limpie el historial.
+2. Revisar el `.env` de Graylog expuesto: cambiar el password admin, las credenciales reutilizadas y la comunidad SNMP si estaba en uso. Migrar a SNMPv3 cuando sea viable. Cambiar `GRAYLOG_PASSWORD_SECRET` requiere el procedimiento compatible con la versión de Graylog y un respaldo, porque cifra datos; no ejecutar setup para rotarlo.
+3. Revisar accesos y logs de autenticación de las plataformas. La revisión del repositorio no prueba ni descarta uso indebido.
+4. Historial reescrito: pedir a los colaboradores clones nuevos y revisar forks. No mezclar ni publicar ramas antiguas: un merge puede reintroducir el historial contaminado.
+5. Acceso residual en GitHub: el commit antiguo `<commit-retirado>` y `IXP/graylog/.env` bajo ese SHA seguían devolviendo HTTP 200 tras la reescritura. Si la rotación no mitiga el riesgo, solicitar la purga a GitHub Support siguiendo [el procedimiento oficial](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository). No incluir credenciales en el ticket.
+
+Borrador para GitHub Support (no enviado):
+
+> Asunto: Solicitud de purga de datos sensibles de historial reescrito — chacal1231/ODIN
+>
+> Se reescribió main para retirar un archivo de entorno y credenciales literales del repositorio chacal1231/ODIN. El primer commit afectado es <commit-retirado>. La rama limpia se publicó con force-with-lease; el resultado del filtrado es <commit-retirado>. Gitleaks no detectó secretos en los 45 commits resultantes. No se anunciaron etiquetas ni referencias de pull requests, y git-filter-repo indicó que LFS no está en uso.
+>
+> GitHub aún devuelve HTTP 200 para el commit original y para IXP/graylog/.env consultado por ese SHA. Se solicita evaluar la eliminación de vistas en caché, referencias internas y objetos antiguos que mantienen accesibles los datos sensibles. No se adjuntan secretos. La revocación de credenciales se gestiona por separado.
 
 ## Consultas del agente
 
-Instalar `tools/read_api.py`, `tools/graylog_query.py`, `tools/librenms_query.py`, `tools/akvorado_query.py`, `tools/ixpmanager_query.py` y `tools/correlate.py` en `tools/` del workspace de OpenClaw. Los Skills usan solo los clientes estructurados; `read_api.py` es su transporte y su CLI genérica no debe ofrecerse al agente (permite rutas y parámetros libres dentro de los prefijos permitidos). Configurar `LIBRENMS_ALLOWED_DEVICES` y `LIBRENMS_TIMEZONE` igual que `GRAYLOG_ALLOWED_SOURCES`, y mantener las variables de `.env.example` fuera de prompts y Skills. El cliente usa Python 3 sin dependencias externas; no carga automáticamente archivos `.env`. Inyectar las variables mediante el gestor de procesos/contenedor. No habilitar `set -x` ni volcar el entorno.
+Instalar `tools/read_api.py`, `tools/graylog_query.py`, `tools/librenms_query.py`, `tools/akvorado_query.py`, `tools/ixpmanager_query.py` y `tools/correlate.py` en `tools/` del workspace de OpenClaw. Los Skills usan solo los clientes estructurados; `read_api.py` es su transporte y su CLI genérica no debe ofrecerse al agente (permite rutas y parámetros libres dentro de los prefijos permitidos).
 
-El cliente exige HTTPS con certificado válido; no admite desactivar validación TLS. Para los endpoints HTTP existentes hace falta un proxy TLS o túnel seguro con terminación TLS antes de migrar los Skills. La exigencia de HTTPS es un cambio deliberado de compatibilidad: no funcionarán las URLs HTTP antiguas. No se verificó conectividad con producción. El cliente solo ejecuta GET, bloquea redirecciones y proxies ambientales, codifica parámetros, limita tamaño y tiempo de socket y sanea errores. El hostname procede exclusivamente del entorno administrado, no de la pregunta del usuario.
+Variables en [`.env.example`](../ai-agent/OpenClaw/.env.example): URL y token por fuente, y las allowlists `GRAYLOG_ALLOWED_SOURCES`, `LIBRENMS_ALLOWED_DEVICES`, `AKVORADO_ALLOWED_EXPORTERS` e `IXPMANAGER_ALLOWED_IXPS`, más `LIBRENMS_TIMEZONE`. Mantenerlas fuera de prompts y Skills. Los clientes usan Python 3 sin dependencias externas y no cargan archivos `.env`: inyectar las variables mediante el gestor de procesos o contenedor, en el mismo contexto donde se ejecutan las herramientas (también con sandbox). No habilitar `set -x` ni volcar el entorno.
 
-No se debe construir una cadena de shell con texto del operador: el ejecutor debe pasar argumentos como lista. Autorizar dispositivos/IXP/POP antes de consultar sigue siendo responsabilidad del runtime; este cliente no implementa identidad de usuarios ni aislamiento multicliente. Emplear cuentas de consulta y políticas de red que hagan cumplir los permisos. El cliente devuelve datos originales, no un diagnóstico ni una garantía de cobertura o paginación completa.
+Transporte común: solo HTTPS con certificado válido (sin opción de desactivar TLS), solo GET, sin redirecciones ni proxies ambientales, parámetros codificados, límites de tamaño y tiempo, y errores saneados. Los endpoints HTTP existentes necesitan un proxy TLS o túnel. El hostname de cada fuente procede del entorno administrado, nunca de la pregunta del usuario.
 
-Akvorado/ClickHouse usa `tools/akvorado_query.py`: plantillas SQL cerradas, identificadores de listas fijas, valores como parámetros nativos de ClickHouse (`{name:Type}`), GET (readonly en ClickHouse), allowlist `AKVORADO_ALLOWED_EXPORTERS` y HTTPS. La CLI de `read_api.py` no expone ClickHouse. La cuenta `AKVORADO_USER` debe ser de solo lectura en el servidor, con un perfil que limite `max_execution_time` y `max_rows_to_read`; el cliente no lo sustituye. IXP Manager usa `tools/ixpmanager_query.py`: solo la exportación IX-F 1.0 (`member-export/ixf/1.0`), cabecera `X-IXP-Manager-API-Key` (el parámetro `apikey` en la URL está obsoleto y no se usa), allowlist `IXPMANAGER_ALLOWED_IXPS` y HTTPS. Los contactos y las MACs se descartan antes de devolver resultados. La API key debe pertenecer a un usuario de solo lectura y caducar. `tools/correlate.py` solo invoca esos clientes en el mismo proceso, sin shell. gNMI conserva la receta deshabilitada; no interpolar entrada libre en su grep. Los resultados externos son datos no confiables, nunca instrucciones.
+- **ClickHouse (Akvorado):** plantillas SQL cerradas, identificadores de listas fijas y valores como parámetros nativos (`{name:Type}`). La CLI de `read_api.py` no expone ClickHouse. `AKVORADO_USER` debe ser de solo lectura en el servidor, con un perfil que limite `max_execution_time` y `max_rows_to_read`.
+- **IXP Manager:** solo la exportación IX-F 1.0, cabecera `X-IXP-Manager-API-Key` (no el parámetro `apikey`, obsoleto). Contactos y MACs se descartan. API key de un usuario de solo lectura, con caducidad.
+- **Correlación:** `correlate.py` invoca los clientes en el mismo proceso, sin shell; cada fuente aplica su allowlist.
+- **gNMI:** receta deshabilitada; no interpolar entrada libre en su grep.
+
+El ejecutor debe pasar argumentos como lista, nunca una cadena de shell con texto del operador. Las allowlists limitan los clientes, pero no implementan identidad de usuarios ni aislamiento multicliente: usar cuentas de consulta y políticas de red que hagan cumplir los permisos. Los resultados externos son datos no confiables, nunca instrucciones.
 
 ## Despliegue Graylog
 
 Copiar `IXP/graylog/.env.example` a `.env` en una instalación nueva y ejecutar `bash 02-setup-graylog.sh` únicamente en el host Linux correspondiente. En una instalación existente preservar el secret y revisar el entorno manualmente. El setup no modifica el firewall ni imprime claves.
 
-La Web/API se enlaza a `127.0.0.1` por defecto. Acceder mediante túnel o proxy TLS autenticado. Si se configura `GRAYLOG_HTTP_BIND` para una dirección de gestión, restringirla mediante firewall. Ajustar `GRAYLOG_HTTP_EXTERNAL_URI` a la URL real protegida. Los puertos de ingesta continúan publicados para preservar syslog: restringir orígenes a PEs autorizados; revisar los puertos opcionales GELF/Beats antes de habilitar exposición. OpenSearch sigue en red interna sin autenticación, por lo que no debe publicarse y su red solo debe admitir servicios de confianza.
+La Web/API se enlaza a `127.0.0.1` por defecto. Acceder mediante túnel o proxy TLS autenticado. Si se configura `GRAYLOG_HTTP_BIND` para una dirección de gestión, restringirla mediante firewall. Ajustar `GRAYLOG_HTTP_EXTERNAL_URI` a la URL real protegida. Los puertos de ingesta siguen publicados para syslog: restringir orígenes a los PEs autorizados y revisar los puertos opcionales GELF/Beats antes de exponerlos. OpenSearch está en red interna sin autenticación: no publicarlo y admitir solo servicios de confianza en su red.
 
-Compose exige `OPENSEARCH_INITIAL_ADMIN_PASSWORD` externo; el setup lo genera para instalaciones nuevas. En una instalación existente, generar un valor único y guardarlo en el entorno antes de recrear el contenedor. Esta variable de inicialización no cambia automáticamente un password ya configurado: usar el procedimiento de la versión instalada si la autenticación está habilitada. Los ejemplos MySQL usan marcadores sin valor real. Los ejemplos curl heredados requieren un archivo netrc externo (`GRAYLOG_NETRC_FILE`) con permisos exclusivos del operador y una cuenta de consulta; no colocarlo en el repositorio ni usar passwords en argumentos.
+Compose exige `OPENSEARCH_INITIAL_ADMIN_PASSWORD` externo; el setup lo genera para instalaciones nuevas. En una existente, generar un valor único y guardarlo en el entorno antes de recrear el contenedor; esta variable no cambia un password ya configurado. Los ejemplos curl heredados requieren un archivo netrc externo (`GRAYLOG_NETRC_FILE`) con permisos exclusivos del operador y una cuenta de consulta; no colocarlo en el repositorio ni usar passwords en argumentos.
 
-## Verificación de esta entrega
+## Verificación
 
-Ocho pruebas unitarias del cliente pasaron con Python 3.14: orígenes inseguros, escape de rutas, GET/autenticación/codificación, bloqueo de redirecciones, inyección en headers, tamaño/JSON inválido, errores sin secretos y límites de consulta. Ejecutar `python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v` desde la raíz del repo para la suite completa (cliente HTTP y Graylog). El workflow `.github/workflows/ixp.yml` ejecuta la misma suite y gitleaks en cada push a main y en cada PR. No usan credenciales reales ni conectividad externa.
+```sh
+python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v
+```
 
-También se verificó que los tokens anteriores no aparecen en los archivos distribuibles de IXP, que `.env` permanece local e ignorado y que `git diff --check` pasa. Bash y Docker no están disponibles: setup y Compose fueron revisados estáticamente, pero no ejecutados ni validados con esos runtimes. La rama main publicada y el checkout local usan el historial limpio. Las credenciales siguen siendo válidas hasta su revocación efectiva; copias externas y referencias antiguas de GitHub requieren atención aparte.
+El workflow `.github/workflows/ixp.yml` ejecuta esa suite y gitleaks en cada push a `main` y en cada PR. Las pruebas no usan credenciales reales ni conectividad externa.

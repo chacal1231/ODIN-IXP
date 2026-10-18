@@ -1,72 +1,53 @@
-# Plan de refactor incremental de IXP
+# Plan de refactor de IXP — pendientes
 
-Base: [auditoría](../architecture/CURRENT_STATE.md), [arquitectura propuesta](../architecture/TARGET_STATE.md), [seguridad](../SECURITY.md) y [limpieza de historial](SECURITY_CLEANUP.md). Revisado el 2026-10-18 para reflejar lo ya ejecutado.
+Base: [estado actual](../architecture/CURRENT_STATE.md), [arquitectura objetivo](../architecture/TARGET_STATE.md) y [seguridad](../SECURITY.md). Este documento solo lista trabajo pendiente; lo terminado queda en el historial de Git.
 
 ## Condición de bloqueo
 
-Hasta que los administradores de Graylog y LibreNMS revoquen los tokens expuestos y se rote lo indicado en [SECURITY.md](../SECURITY.md), ninguna fase reduce el riesgo real: el commit antiguo y `IXP/graylog/.env` siguen accesibles en GitHub por SHA (HTTP 200). Las fases de código pueden avanzar en paralelo, pero no se despliegan contra producción con credenciales anteriores.
+Hasta revocar los tokens expuestos y rotar lo indicado en [SECURITY.md](../SECURITY.md), nada se despliega contra producción con credenciales anteriores. El código puede avanzar en paralelo.
 
-## Estado y orden de ejecución
+## Validación con las plataformas reales
 
-Estados: **hecho**, **en curso**, **pendiente**, **bloqueado**. Responsable por defecto: mantenedor de IXP, salvo donde se indique.
+Requiere acceso a las instalaciones. Cada punto confirma un contrato que hoy es provisional; si no coincide, el cliente falla cerrado (`invalid_response`) y hay que ajustarlo.
 
-| Fase | Estado | Cambio acotado | Condición de aceptación |
-|---|---|---|---|
-| P0 — Contención (repo) | hecho | Secretos retirados de Skills y plantillas; `.gitignore`; historial reescrito y publicado con force-with-lease; gitleaks sin hallazgos | Ningún secreto literal en archivos distribuibles; `.env` ignorado |
-| P0 — Contención (operativa) | **bloqueado** (administradores de plataformas) | Revocar tokens Graylog/LibreNMS; cambiar password admin, credenciales reutilizadas y comunidad SNMP; revisar logs de autenticación; solicitar purga a GitHub Support si la rotación no basta | Credenciales anteriores invalidadas y comprobadas como rechazadas; acceso de consulta mínimo |
-| P0 — Endpoints en Skills | hecho en repo; Akvorado reactivado con cliente; gNMI sigue deshabilitado (falta `skills.entries` en la instalación) | Retirar IP/hostnames reales de Akvorado y gNMI; deshabilitar su ejecución autónoma hasta tener adaptador | Sin endpoints de infraestructura en Skills; el agente informa fuente no habilitada en lugar de ejecutar curl |
-| P0 — Línea base OpenClaw | en curso | Versión fijada en la guía: 2026.8.35 (`extended-stable`); falta instalarla, registrar el digest y comprobar que la configuración de la instalación coincide; versionar `openclaw.json` saneado; documentar cómo llegan `tools/` y variables al sandbox de ejecución; restringir la herramienta de ejecución a los clientes permitidos; deshabilitar en `skills.entries` los Skills sin adaptador | Instalación reproducible con versión concreta; el agente no puede ejecutar curl/SQL arbitrario aunque el Skill lo sugiera |
-| P0 — CI | hecho en repo; pendiente primera ejecución en GitHub | Workflow con `unittest discover` de `tools/` y gitleaks | Pruebas y escaneo de secretos en cada push/PR |
-| P1 — Graylog | hecho (falta validar contra la versión instalada) | `graylog_query.py` + `read_api.py`; fixtures sintéticos; Skill migrado | Ver «Graylog: compatibilidad» |
-| P1 — Modelo local | pendiente | Elegir modelo Qwen y backend (Ollama, vLLM u otro) y medirlo con OpenClaw instalado | Modelo, tamaño, cuantización y contexto documentados; ≥ 9/10 ejecuciones correctas de herramienta en casos A–D con fixtures; fallo explícito si el backend cae; sin fallback cloud obligatorio |
-| P1 — PMACCT ingesta | hecho en repo; falta validar en laboratorio y migrar (ver `Pmacct/README.md`) | Extraer ingester del README a archivos versionados con pruebas; timeout en POST; no vaciar lotes fallidos; flush por tiempo sin nuevas líneas; checkpoint; rotación coordinada | En laboratorio: cero pérdidas en reinicio del consumidor y de ClickHouse; duplicación y lag reportados con cifras; sin `except: continue` |
-| P2 — LibreNMS | hecho en repo; falta confirmar envelopes de la API contra la versión instalada | `librenms_query.py`: operaciones enumeradas (resolve, devices, ports, bgp, alerts, sensors, eventlog), allowlist `LIBRENMS_ALLOWED_DEVICES`, filtrado por ámbito vía `device_id`, unidades y horas UTC con `LIBRENMS_TIMEZONE`; Skill migrado. `read_api.py librenms` sigue disponible como CLI genérica: no instalarla en el workspace del agente | Sin rutas o parámetros libres desde el operador; pruebas de contrato con fixtures; resolución display/sysName → hostname probada |
-| P2 — Evidencias | pendiente | Contrato común validado; una fuente por cambio | Fuente, alcance, fechas UTC, unidades, referencia y estado probados |
-| P2 — Ópticas | hecho en repo (`librenms_query.py optics`); falta confirmar formato de `health/device_dbm` | Resolver dispositivo/interfaz y sensores; RX/TX y límites | Margen inferior = actual − mínimo; superior = máximo − actual; dBm de medición y dB de margen; distinguir umbral DOM del fabricante de límite asignado por LibreNMS; sin umbral inventado; ausencias y violaciones probadas |
-| P2 — PMACCT consulta | pendiente | Consulta BGP de solo lectura | Resultados sin afirmar RIB completa; vacío distinto de colector atrasado |
-| P3 — Akvorado e inventario | Akvorado hecho en repo (`akvorado_query.py`, Skill reactivado); falta confirmar esquema, retención de tablas y cuenta readonly. IXP Manager hecho en repo (`ixpmanager_query.py` sobre IX-F 1.0, Skill IXPManager, enriquecimiento de peers en `correlate.py`); falta confirmar la exportación de la instalación y la asociación puerto físico ↔ miembro, que IX-F no incluye. gNMI pendiente | Cuenta SELECT, transporte protegido, consultas parametrizadas con plantillas cerradas; IXP Manager; evaluar gNMI | Tráfico sin doble muestreo; filtros y ventanas acotados; asociación miembro/ASN/puerto verificable |
-| P3 — Correlación | hecho en repo (`correlate.py`, Skill Correlacion); caso D sin PMACCT (falta cliente de lectura de `bmp_events`) | Casos A–D, contradicciones y reporte con fuentes | Hipótesis separadas de observaciones; fuentes caídas explícitas; sin causalidad injustificada |
-| P4 — Operación | pendiente | Instalación segura, diagnóstico, rollback y métricas; Oxidized/Zabbix solo con necesidad real | Procedimientos reproducibles; escrituras deshabilitadas por defecto |
-
-No introducir frameworks, colas, servicios ni bases vectoriales sin necesidad demostrada. Los clientes usan Python 3 de la biblioteca estándar; confirmar el runtime del sandbox de OpenClaw antes de añadir dependencias.
-
-Excepción registrada: LibreNMS se migró a `read_api.py` en el mismo cambio que Graylog para retirar su token del Skill. Esa migración solo cambia el transporte; su cliente estructurado sigue siendo la fase P2 — LibreNMS.
-
-## Graylog: compatibilidad
-
-El cambio no conserva las mismas consultas, deliberadamente:
-
-- Ya no se acepta Lucene libre. Solo eventos enumerados (`all`, `bgp`, `interface-down`, `config`, `critical`), interfaz, vecino BGP, ventana de 1–86400 s y límite de 1–100.
-- Solo equipos en `GRAYLOG_ALLOWED_SOURCES`.
-- HTTPS obligatorio con certificado válido; las URLs HTTP anteriores dejan de funcionar.
-- La salida es JSON con contrato (`status`, `evidence`, `coverage`, `warnings`), no la respuesta cruda de Graylog.
-- Sin paginación: devuelve una muestra acotada y marca `sample_truncated` o `unknown_total_results`.
-
-Pruebas existentes: filtros rechazados antes de red, allowlist, vacío frente a parcial, horas y referencias ausentes, contrato inválido o fuera de ámbito, instrucciones en logs como datos, 401/403/429/500, timeout, JSON inválido y respuesta sobredimensionada. Pendiente: confirmar contra la versión instalada que `search/universal/relative` y `messages[].message` siguen vigentes; probar otros 5xx con la respuesta real.
-
-Rollback: no existe vuelta al curl sobre HTTP con token. Si el cliente falla en producción, la vuelta atrás es desactivar el Skill de Graylog e informar la fuente como no disponible mientras se corrige; si falta HTTPS, el prerrequisito es un proxy TLS o túnel, no relajar el cliente. Nunca reintroducir credenciales comprometidas. Cambios de nombres/rutas requieren alias o migración explícita. No mover `Akavorado` ni reestructurar IXP en esta fase.
-
-## Pruebas y fixtures previstos
-
-| Caso | Datos de prueba | Verificación |
+| Tema | Pendiente | Aceptación |
 |---|---|---|
-| A: puerto down | Estado down, logs, tráfico por ventana y eventos BGP; variante con Graylog caído | Línea temporal y alcance del impacto observado; fuente caída visible |
-| B: umbral óptico | RX/TX, mínimo/máximo, óptica, valores ausentes e incompatibles | Márgenes en dB y orden de riesgo; distinguir potencia alta/baja y falta de umbral |
-| C: degradación UP | Interfaz UP, caída de tráfico, errores y RX; BGP sin cambios o contradictorio | Degradación sin inventar down ni causa confirmada |
-| D: cambios BGP | Updates/retiros, peer, timestamps y miembro; ventana vacía y colector atrasado | PMACCT solo para rutas; vacío diferenciado de fuente sana y completa |
+| Exposición | Comprobar que ClickHouse (`:8123`) y el endpoint de métricas gNMI no responden desde Internet sin autenticación | Sin acceso anónimo desde fuera de la red de gestión |
+| OpenClaw | Instalar 2026.8.35 y registrar el digest; versionar `openclaw.json` saneado; llevar `tools/` y variables al contexto de ejecución del sandbox; restringir la ejecución a los clientes; desactivar gNMI en `skills.entries`; no ofrecer `read_api.py` como herramienta | Instalación reproducible; el agente no puede ejecutar curl/SQL arbitrario aunque un Skill lo sugiera |
+| CI | Confirmar que el workflow `IXP` pasa en GitHub | Pruebas y gitleaks en verde en `main` |
+| Graylog | Confirmar en el API browser `search/universal/relative`, el esquema `messages[].message`, permisos, nombres reales de `source` y HTTPS/CA desde el sandbox; consulta real con token nuevo de solo lectura | `graylog_query.py --device <PE> --seconds 300` devuelve `ok` o `empty` |
+| LibreNMS | Ejecutar cada operación y comparar envelopes (`devices`, `ports`, `bgp_sessions`, `alerts`, `graphs`, `logs`); formato de `health/device_dbm` con y sin `sensor_id`; si las descripciones de sensor indican Rx/Tx | Todas las operaciones sin `invalid_response`; `optics` sin `direction_unresolved` |
+| Akvorado | `DESCRIBE` de `flows`, `flows_1m0s`, `flows_5m0s`, `flows_1h0m0s` y `exporters`; confirmar que `Bytes × SamplingRate` aplica también en tablas agregadas; retención de cada tabla; cuenta readonly con perfil (`max_execution_time`, `max_rows_to_read`) | Tráfico sin doble muestreo; ventanas dentro de la retención real |
+| IXP Manager | Revisar una exportación IX-F real; comprobar que la API key ve los nombres de miembro; anotar los `ixp_id` | `members` y `ips` coinciden con el inventario |
+| Modelo local | Elegir Qwen y backend (Ollama, vLLM u otro) y documentar modelo, tamaño, cuantización y contexto | ≥ 9/10 llamadas correctas a herramientas en casos A–D; fallo explícito si el backend cae; sin fallback cloud obligatorio |
+| PMACCT | Migración según `Pmacct/README.md` (cuenta INSERT, `BMP_INITIAL_POSITION=end`, retirar `truncate-bmp`, logrotate horario); medir la ventana de `copytruncate` o comprobar si pmbmpd reabre el archivo | Cero pérdidas en reinicio del ingester y de ClickHouse; duplicación y lag con cifras |
 
-Añadir contratos por fuente para autenticación, timeout, paginación y respuestas incompletas; seguridad para shell/SQL, URLs fuera de allowlist, redirecciones, logs con prompt injection y consultas entre IXP/POP. Las pruebas de IA deben comprobar afirmaciones contra fixtures, no limitarse a buscar frases del prompt.
+Para Graylog y el modelo local: probar primero en un workspace aislado. Preguntar por una interfaz de un equipo autorizado en los últimos cinco minutos; la traza debe mostrar la ejecución del cliente y una respuesta con fuente y hora. Repetir con una fuente no autorizada y con datos ausentes o contradictorios. Si el modelo no llama a la herramienta o el backend falla, la validación falla aunque la respuesta parezca convincente. No cortar servicios reales para simular fallos.
 
-Ejecutar las pruebas desde la raíz del repositorio:
+## Código
 
-```sh
-python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v
-```
+| Orden | Pendiente | Aceptación |
+|---|---|---|
+| 1 | Pasar a `test_*.py` las pruebas de `librenms_query` (incluida `optics`), `akvorado_query`, `ixpmanager_query`, `correlate` y el ingester BMP | El CI cubre todos los clientes |
+| 2 | Cliente de lectura de PMACCT sobre `bmp_events` e integración en el caso D | Updates/retiros por peer y ventana; vacío distinto de colector atrasado; sin afirmar RIB completa |
+| 3 | Mapa de nombres entre sistemas (equipo → hostname LibreNMS, source Graylog, exporter Akvorado, switch IXP Manager, IXP/POP) | `correlate.py` sin nombres pasados a mano; nombres sin mapa marcados como hueco |
+| 4 | Auditoría: `query_id` en cada resultado y registro de solicitante, ámbito, fuente, duración y estado | Toda consulta trazable sin registrar secretos |
+| 5 | Restricción de ejecución: lista de comandos permitidos o servidor MCP, según lo que soporte la versión instalada | El agente solo puede invocar las operaciones definidas |
+| 6 | Asociación puerto físico ↔ miembro (endpoints adicionales de IXP Manager o convención en `ifAlias`) | Impacto por miembro de un puerto caído como observación, no hipótesis |
+| 7 | gNMI: cliente con contadores convertidos en tasas, o retirar el Skill | Sin Skill deshabilitado indefinidamente |
+| 8 | Identidad y alcance por usuario (IXP/POP por operador) | Un operador no consulta ámbitos ajenos |
+| 9 | Límites de concurrencia y caché corta en correlación | Sin ráfagas de llamadas por pregunta |
+| 10 | Evaluación del modelo contra fixtures: no inventar caídas, no convertir hipótesis en causa, ignorar instrucciones en logs | Afirmaciones comprobadas contra los datos, no por frases del prompt |
 
-## Dependencias y riesgos pendientes
+## Documentación y operación
 
-- Se necesita acceso autorizado de lectura a versiones, configuración saneada y muestras para confirmar contratos; la auditoría no requiere acceso a producción.
-- En el entorno de desarrollo actual Git, Docker y Bash no están en PATH; Python sí. Setup y Compose solo se han revisado estáticamente. Validarlos en un host Linux de laboratorio antes de cambios operativos. No ejecutar scripts de instalación para suplir herramientas durante una revisión.
-- La ingesta BMP escribe telemetría y usa credenciales separadas de la cuenta SELECT del agente. Sus cambios requieren comparar conteos, pérdida, duplicación y recuperación en laboratorio antes de sustituir el proceso operativo.
-- Las IPs y hostnames retirados de los Skills de Akvorado y gNMI siguen en el historial publicado y en la documentación de despliegue (README, Graylog, LibreNMS, PMACCT). Decidir si se sustituyen por marcadores en toda la documentación. Comprobar que ClickHouse (`:8123`) y el endpoint de métricas no son accesibles desde Internet sin autenticación; si lo son, es un riesgo inmediato independiente de este refactor.
-- Toda fase termina con su comprobación y la documentación de sus limitaciones.
+- Guía única de instalación de los clientes en OpenClaw: archivos, variables, sandbox y verificación.
+- README principal de IXP: estructura inexistente (`syslog/`, `monitoring/`, …), clonado de otro remoto y estados desactualizados.
+- Graylog: el README usa rutas `syslog/` y un archivo de extractors que no está en el repositorio.
+- Decidir si se sustituyen por marcadores las IPs y hostnames reales de la documentación de despliegue.
+- Runbooks por fuente caída, rollback por componente y métricas de salud del agente.
+- Oxidized y Zabbix solo con necesidad demostrada.
+
+## Principios
+
+No introducir frameworks, colas, servicios ni bases vectoriales sin necesidad demostrada. Los clientes usan Python 3 de la biblioteca estándar; confirmar el runtime del sandbox antes de añadir dependencias. Escrituras y cambios de configuración desde el agente, deshabilitados por defecto.
