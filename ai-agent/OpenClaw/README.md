@@ -36,9 +36,11 @@ docker compose version
 
 ## 2. Clonar el repositorio de OpenClaw
 
+Versión fijada para IXP: **2026.8.35** (línea `extended-stable`, el equivalente a LTS de OpenClaw; publicada el 2026-10-02). Clonar ese tag, no `main`:
+
 ```bash
 cd /opt
-git clone https://github.com/openclaw/openclaw.git
+git clone --branch v2026.8.35 --depth 1 https://github.com/openclaw/openclaw.git
 cd openclaw
 ```
 
@@ -61,11 +63,13 @@ Esto hace automáticamente:
 ### Opción B: Usar imagen pre-construida
 
 ```bash
-export OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:latest"
+export OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:2026.8.35"
 ./scripts/docker/setup.sh
 ```
 
-Las imágenes pre-construidas están en GitHub Container Registry con tags: `main`, `latest`, o versión específica (ej: `2026.3.13`).
+Las imágenes pre-construidas están en GitHub Container Registry con tags: `main`, `latest`, `extended-stable` o versión específica (ej: `2026.8.35`). Para IXP usar siempre la versión fijada y no `main`, `latest` ni `extended-stable`: esos tags se mueven, y los Skills y el sandbox se validan contra una versión concreta. Tras el primer pull, registrar el digest (`docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/openclaw/openclaw:2026.8.35`) junto a la configuración saneada.
+
+Para subir de versión, preferir el siguiente parche de la línea `extended-stable` (por ejemplo 2026.9.33) con al menos dos semanas de publicación, y validarlo en laboratorio con los casos de prueba del plan antes de producción.
 
 ### Opción C: Build manual paso a paso
 
@@ -323,7 +327,7 @@ docker compose restart openclaw-gateway
 # Ejecutar comandos CLI
 docker compose run --rm openclaw-cli <comando>
 
-# Actualizar a última versión
+# Actualizar: cambiar OPENCLAW_IMAGE a la nueva versión fijada, validarla en laboratorio y luego
 docker compose pull && docker compose up -d
 
 # Detener todo
