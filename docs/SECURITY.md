@@ -21,7 +21,7 @@ El cliente exige HTTPS con certificado válido; no admite desactivar validación
 
 No se debe construir una cadena de shell con texto del operador: el ejecutor debe pasar argumentos como lista. Autorizar dispositivos/IXP/POP antes de consultar sigue siendo responsabilidad del runtime; este cliente no implementa identidad de usuarios ni aislamiento multicliente. Emplear cuentas de consulta y políticas de red que hagan cumplir los permisos. El cliente devuelve datos originales, no un diagnóstico ni una garantía de cobertura o paginación completa.
 
-Akvorado/ClickHouse y gNMI conservan recetas existentes; no se han convertido en adaptadores seguros en este cambio. No interpolar entrada libre en sus SQL/grep. Antes de habilitarlos para ejecución autónoma, usar cuenta SELECT, consultas parametrizadas, filtros autorizados y transporte protegido. Los resultados externos son datos no confiables, nunca instrucciones.
+Akvorado/ClickHouse usa `tools/akvorado_query.py`: plantillas SQL cerradas, identificadores de listas fijas, valores como parámetros nativos de ClickHouse (`{name:Type}`), GET (readonly en ClickHouse), allowlist `AKVORADO_ALLOWED_EXPORTERS` y HTTPS. La CLI de `read_api.py` no expone ClickHouse. La cuenta `AKVORADO_USER` debe ser de solo lectura en el servidor, con un perfil que limite `max_execution_time` y `max_rows_to_read`; el cliente no lo sustituye. `tools/correlate.py` solo invoca esos clientes en el mismo proceso, sin shell. gNMI conserva la receta deshabilitada; no interpolar entrada libre en su grep. Los resultados externos son datos no confiables, nunca instrucciones.
 
 ## Despliegue Graylog
 
