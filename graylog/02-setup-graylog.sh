@@ -31,12 +31,14 @@ fi
 PASSWORD_SHA2=$(printf '%s' "$ADMIN_PASSWORD" | sha256sum | awk '{print $1}')
 unset ADMIN_PASSWORD ADMIN_CONFIRM
 PASSWORD_SECRET=$(openssl rand -hex 32)
+OPENSEARCH_PASSWORD="$(openssl rand -hex 32)Aa1!"
 ENV_TMP=$(mktemp .env.setup.XXXXXX)
 trap 'rm -f -- "$ENV_TMP"' EXIT
-awk '!/^GRAYLOG_(ROOT_PASSWORD|ROOT_PASSWORD_SHA2|PASSWORD_SECRET)=/' .env > "$ENV_TMP"
+awk '!/^GRAYLOG_(ROOT_PASSWORD|ROOT_PASSWORD_SHA2|PASSWORD_SECRET)=/ && !/^OPENSEARCH_INITIAL_ADMIN_PASSWORD=/' .env > "$ENV_TMP"
 printf '\nGRAYLOG_PASSWORD_SECRET=%s\nGRAYLOG_ROOT_PASSWORD_SHA2=%s\n' "$PASSWORD_SECRET" "$PASSWORD_SHA2" >> "$ENV_TMP"
+printf 'OPENSEARCH_INITIAL_ADMIN_PASSWORD=%s\n' "$OPENSEARCH_PASSWORD" >> "$ENV_TMP"
 mv -- "$ENV_TMP" .env
-unset PASSWORD_SECRET PASSWORD_SHA2
+unset PASSWORD_SECRET PASSWORD_SHA2 OPENSEARCH_PASSWORD
 sudo sysctl -w vm.max_map_count=262144
 printf '%s\n' 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-opensearch.conf > /dev/null
 echo 'Configuración guardada sin imprimir secretos; API local por defecto.'

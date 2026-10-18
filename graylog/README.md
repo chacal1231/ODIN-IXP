@@ -148,18 +148,18 @@ Archivo: `extractors/arista-eos-extractors.json`
 
 ```bash
 # Total de mensajes
-curl -u TOKEN http://localhost:9000/api/count/total
+curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" http://localhost:9000/api/count/total
 
 # Buscar logs de un PE específico
-curl -u TOKEN \
+curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" \
   "http://localhost:9000/api/search/universal/relative?query=source:PE-ODATA01&range=3600"
 
 # Buscar eventos BGP
-curl -u TOKEN \
+curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" \
   "http://localhost:9000/api/search/universal/relative?query=arista_facility:BGP&range=86400"
 
 # Buscar por neighbor IP
-curl -u TOKEN \
+curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" \
   "http://localhost:9000/api/search/universal/relative?query=bgp_neighbor_ip:203.0.113.74&range=86400"
 ```
 

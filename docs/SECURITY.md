@@ -29,6 +29,8 @@ Copiar `IXP/graylog/.env.example` a `.env` en una instalación nueva y ejecutar 
 
 La Web/API se enlaza a `127.0.0.1` por defecto. Acceder mediante túnel o proxy TLS autenticado. Si se configura `GRAYLOG_HTTP_BIND` para una dirección de gestión, restringirla mediante firewall. Ajustar `GRAYLOG_HTTP_EXTERNAL_URI` a la URL real protegida. Los puertos de ingesta continúan publicados para preservar syslog: restringir orígenes a PEs autorizados; revisar los puertos opcionales GELF/Beats antes de habilitar exposición. OpenSearch sigue en red interna sin autenticación, por lo que no debe publicarse y su red solo debe admitir servicios de confianza.
 
+Compose exige `OPENSEARCH_INITIAL_ADMIN_PASSWORD` externo; el setup lo genera para instalaciones nuevas. En una instalación existente, generar un valor único y guardarlo en el entorno antes de recrear el contenedor. Esta variable de inicialización no cambia automáticamente un password ya configurado: usar el procedimiento de la versión instalada si la autenticación está habilitada. Los ejemplos MySQL usan marcadores sin valor real. Los ejemplos curl heredados requieren un archivo netrc externo (`GRAYLOG_NETRC_FILE`) con permisos exclusivos del operador y una cuenta de consulta; no colocarlo en el repositorio ni usar passwords en argumentos.
+
 ## Verificación de esta entrega
 
 Ocho pruebas unitarias del cliente pasaron con Python 3.14: orígenes inseguros, escape de rutas, GET/autenticación/codificación, bloqueo de redirecciones, inyección en headers, tamaño/JSON inválido, errores sin secretos y límites de consulta. Ejecutar `python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p test_read_api.py -v` desde la raíz del repo. No usan credenciales reales ni conectividad externa.

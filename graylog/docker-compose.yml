@@ -50,7 +50,7 @@ services:
       - action.auto_create_index=false
       - plugins.security.disabled=true
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms8g -Xmx8g}
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=TOKEN
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?Configure un password inicial único de OpenSearch}
     ulimits:
       memlock:
         soft: -1

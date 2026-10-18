@@ -157,4 +157,4 @@
 ## docker compose logs -f graylog | grep "1514"
 ##
 ## Para ver el conteo de mensajes recibidos:
-## curl -u TOKEN http://localhost:9000/api/count/total
+## curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" http://localhost:9000/api/count/total

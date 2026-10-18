@@ -46,8 +46,8 @@ Cambiar estos valores:
 
 ```
 TZ=America/Bogota
-MYSQL_PASSWORD=TOKEN
-MYSQL_ROOT_PASSWORD=TOKEN
+MYSQL_PASSWORD=<GENERAR_PASSWORD_UNICO>
+MYSQL_ROOT_PASSWORD=<GENERAR_PASSWORD_ROOT_UNICO>
 ```
 
 ### Archivo `librenms.env`
@@ -105,7 +105,8 @@ Acceder a `http://odin.example.net:9001` y crear el usuario admin en el wizard i
 Si necesitas crear un usuario adicional por CLI:
 
 ```bash
-docker compose exec --user librenms librenms lnms user:add admin -p TuPassword -r admin
+docker compose exec --user librenms librenms lnms user:add admin -r admin
+# Usar el mecanismo interactivo de la versión instalada; no poner passwords en argumentos.
 ```
 
 ## Paso 6 — Validar la instalación
