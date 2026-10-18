@@ -30,7 +30,11 @@ def request(source, path, params):
     if not token or re.search(r"[\s\x00-\x1f\x7f]", token):
         raise ValueError("Token ausente o inválido")
     # Paths are relative to the configured API root; query values are encoded separately.
-    if not re.fullmatch(r"[A-Za-z0-9_.:/-]+", path) or ".." in path or path.startswith("/"):
+    if source == "akvorado":
+        # ClickHouse HTTP interface: queries go in params, only to the root path.
+        if path != "":
+            raise ValueError("Ruta ClickHouse no permitida")
+    elif not re.fullmatch(r"[A-Za-z0-9_.:/-]+", path) or ".." in path or path.startswith("/"):
         raise ValueError("Ruta inválida")
     if source == "graylog" and path != "search/universal/relative":
         raise ValueError("Ruta Graylog no permitida")
@@ -42,9 +46,15 @@ def request(source, path, params):
     if source == "graylog":
         encoded = base64.b64encode((token + ":token").encode()).decode()
         headers["Authorization"] = "Basic " + encoded
+    elif source == "akvorado":
+        user = os.environ.get("AKVORADO_USER", "")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", user):
+            raise ValueError("AKVORADO_USER ausente o inválido")
+        headers["X-ClickHouse-User"], headers["X-ClickHouse-Key"] = user, token
     else:
         headers["X-Auth-Token"] = token
     url = base + "/" + path + "?" + urllib.parse.urlencode(params)
+    # GET makes ClickHouse treat the request as readonly; the account must also be SELECT-only.
     req = urllib.request.Request(url, headers=headers, method="GET")
     # Ignore ambient proxies; do not forward credentials to redirect destinations.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
