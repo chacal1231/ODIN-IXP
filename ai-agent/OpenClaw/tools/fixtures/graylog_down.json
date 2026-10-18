@@ -1,0 +1,17 @@
+{
+  "messages": [
+    {
+      "index": "synthetic-index",
+      "message": {
+        "_id": "synthetic-event-1",
+        "source": "PE-LAB-01",
+        "timestamp": "2026-10-18T09:00:00-05:00",
+        "interface_name": "Ethernet1/1",
+        "interface_state": "down",
+        "arista_facility": "ETH",
+        "message": "SYNTHETIC TEST ONLY: Ethernet1/1 changed state to down"
+      }
+    }
+  ],
+  "total_results": 1
+}
