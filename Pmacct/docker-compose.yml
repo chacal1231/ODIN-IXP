@@ -1,0 +1,28 @@
+services:
+  pmbmpd:
+    restart: unless-stopped
+    container_name: pmbmpd
+    # latest apuntaba a v1.8.0 el 2026-09-24; confirmar la versión en ejecución antes de recrear.
+    image: pmacct/pmbmpd:v1.8.0
+    init: true
+    ports:
+      - "${BMP_LISTEN:-0.0.0.0}:5000:5000"
+    volumes:
+      - ./config/pmbmpd.conf:/etc/pmacct/pmbmpd.conf:ro
+      - ./data/bmp-logs:/data/bmp-logs
+    environment:
+      - LC_ALL=en_US.UTF-8
+      - LANG=en_US.UTF-8
+
+  bmp-ingester:
+    build:
+      context: ./ingester
+    restart: unless-stopped
+    container_name: bmp-ingester
+    # Tiempo para vaciar el lote pendiente antes de SIGKILL (el ingester espera hasta 20 s).
+    stop_grace_period: 30s
+    env_file: .env
+    volumes:
+      - ./data/bmp-logs:/data/bmp-logs:ro
+      - ./data/ingester-state:/var/lib/bmp-ingester
+    network_mode: host

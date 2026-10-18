@@ -1,0 +1,15 @@
+# /etc/logrotate.d/pmbmpd — sustituye al cron truncate-bmp (retirar ese cron).
+# delaycompress deja el contenido anterior sin comprimir en <archivo>.1, de donde el
+# ingester recupera lo que aún no había confirmado en ClickHouse.
+# copytruncate tiene una ventana inherente: lo que pmbmpd escriba entre la copia y el
+# truncado se pierde. Medir en laboratorio antes de producción.
+/opt/pmacct/data/bmp-logs/bmp-events-*.json {
+    hourly
+    maxsize 200M
+    rotate 24
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

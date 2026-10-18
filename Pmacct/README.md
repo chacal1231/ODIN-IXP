@@ -40,9 +40,9 @@ ODIN consulta con SQL
 | Componente | Ubicación | Función |
 |---|---|---|
 | pmbmpd | Docker en `/opt/pmacct` | Colector BMP, escucha TCP :5000 |
-| bmp-ingester | Docker en `/opt/pmacct` | Lee JSON con tail -F, inserta en ClickHouse |
+| bmp-ingester | Docker en `/opt/pmacct` ([ingester/](ingester/)) | Lee el JSON por offset con checkpoint y lo inserta en ClickHouse (at-least-once) |
 | ClickHouse | `198.51.100.37:8123` (ya existente por Akvorado) | Almacena tabla `bmp_events` con 90 días de retención |
-| cron truncate | `/etc/cron.hourly/truncate-bmp` | Trunca JSON cada hora para no llenar disco |
+| logrotate | `/etc/logrotate.d/pmbmpd` ([config/logrotate-pmbmpd](config/logrotate-pmbmpd)) | Rota el JSON por hora o tamaño sin perder lo no confirmado |
 
 ---
 
@@ -57,23 +57,30 @@ docker compose down
 
 ### Paso 2 — Crear estructura de pmacct
 
+Los archivos de despliegue están versionados en este directorio (`IXP/Pmacct/`). Copiarlos al host:
+
 ```bash
-mkdir -p /opt/pmacct/{config,data/bmp-logs}
+mkdir -p /opt/pmacct/data/{bmp-logs,ingester-state}
+cp -r IXP/Pmacct/{config,ingester,docker-compose.yml,.env.example} /opt/pmacct/
+cp /opt/pmacct/.env.example /opt/pmacct/.env   # completar credenciales; no versionar
+chmod 600 /opt/pmacct/.env
+# El ingester corre como uid 10001 y guarda allí su checkpoint
+chown 10001 /opt/pmacct/data/ingester-state
 ```
 
 ### Paso 3 — Configuración de pmbmpd
 
-```bash
-cat > /opt/pmacct/config/pmbmpd.conf << 'EOF'
+[config/pmbmpd.conf](config/pmbmpd.conf):
+
+```
 daemonize: false
 bmp_daemon_ip: 0.0.0.0
 bmp_daemon_port: 5000
 bmp_daemon_max_peers: 20
-
-! Solo eventos en tiempo real (cambios de ruta, peer up/down)
 bmp_daemon_msglog_file: /data/bmp-logs/bmp-events-$peer_src_ip.json
-EOF
 ```
+
+Incluye `timestamps_utc: true` comentado: sin él pmbmpd escribe hora local. Activarlo cambia el significado de las filas nuevas frente a las existentes; coordinarlo antes.
 
 **Notas sobre la config:**
 
@@ -84,111 +91,31 @@ EOF
 
 ### Paso 4 — Docker Compose
 
-```bash
-cat > /opt/pmacct/docker-compose.yml << 'EOF'
-services:
-  pmbmpd:
-    restart: unless-stopped
-    container_name: pmbmpd
-    image: pmacct/pmbmpd:latest
-    init: true
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./config/pmbmpd.conf:/etc/pmacct/pmbmpd.conf:ro
-      - ./data/bmp-logs:/data/bmp-logs
-    environment:
-      - LC_ALL=en_US.UTF-8
-      - LANG=en_US.UTF-8
+[docker-compose.yml](docker-compose.yml) define `pmbmpd` (imagen fijada `pmacct/pmbmpd:v1.8.0`, la que `latest` señalaba el 2026-09-24) y `bmp-ingester`. El ingester lee los logs en solo lectura, guarda su estado en `data/ingester-state` y toma las credenciales de `.env`. Antes de recrear `pmbmpd`, confirmar la versión en ejecución con `docker inspect pmbmpd --format '{{.Image}}'`.
 
-  bmp-ingester:
-    build:
-      context: .
-      dockerfile: Dockerfile.ingester
-    restart: unless-stopped
-    container_name: bmp-ingester
-    volumes:
-      - ./data/bmp-logs:/opt/pmacct/data/bmp-logs:ro
-    network_mode: host
-EOF
-```
+### Paso 5 — Ingester a ClickHouse
 
-### Paso 5 — Script de ingesta a ClickHouse
+[ingester/bmp_ingester.py](ingester/bmp_ingester.py) (Python 3 sin dependencias) sustituye al script con `tail -F`:
 
-```bash
-cat > /opt/pmacct/bmp-to-clickhouse.py << 'PYEOF'
-#!/usr/bin/env python3
-import json, subprocess, requests, time, sys
+| Antes | Ahora |
+|---|---|
+| POST sin timeout; un error solo se imprimía y el lote se descartaba | Timeout configurable; reintento con backoff hasta 60 s; el lote se conserva hasta que ClickHouse lo confirma |
+| El flush por tiempo dependía de que llegara otra línea | Flush cada `BMP_FLUSH_SECONDS` aunque no haya líneas nuevas |
+| Sin estado: un reinicio perdía el lote en memoria y releía desde `tail` | Checkpoint durable (`dev`, `inode`, `offset`) que solo avanza tras la confirmación |
+| `except: continue` ocultaba errores | Líneas inválidas contadas y registradas; filas sin `timestamp` rechazadas antes de enviar |
+| SQL construido por concatenación con escape manual | `INSERT ... FORMAT JSONEachRow`, sin construir SQL con datos |
+| Un solo archivo fijo | Todos los `bmp-events-*.json` (un archivo por peer de pmbmpd) |
+| — | Errores 4xx no recuperables (p. ej. esquema) pasan a `dead-letter.jsonl` para no bloquear la ingesta |
+| — | Métricas cada 60 s en stderr: insertadas, rechazadas, reintentos, inválidas y lag en bytes por archivo |
+| — | SIGTERM vacía el lote pendiente (hasta 20 s) antes de salir |
 
-CLICKHOUSE = "http://198.51.100.37:8123/"
-TABLE = "bmp_events"
-BMP_FILE = "/opt/pmacct/data/bmp-logs/bmp-events-198_51_100_42.json"
-BATCH_SIZE = 500
+Garantía: at-least-once. Puede haber duplicados si el proceso cae entre la confirmación de ClickHouse y la escritura del checkpoint, o al releer un `.1` tras rotación. Cada envío lleva `insert_deduplication_token`; ClickHouse solo deduplica si la tabla tiene `non_replicated_deduplication_window` (ver Paso 7).
 
-def insert_batch(rows):
-    if not rows:
-        return
-    values = []
-    for r in rows:
-        values.append("({ts},'{lt}',{afi},{safi},'{pfx}','{nh}','{asp}','{comms}','{lcomms}','{orig}',{lp},{med},'{peer}','{rtr}','{mt}')".format(
-            ts="parseDateTimeBestEffort('{0}')".format(r.get('timestamp','')),
-            lt=r.get('log_type',''),
-            afi=r.get('afi',0),
-            safi=r.get('safi',0),
-            pfx=r.get('ip_prefix',''),
-            nh=r.get('bgp_nexthop',''),
-            asp=r.get('as_path','').replace("'","\\'"),
-            comms=r.get('comms','').replace("'","\\'"),
-            lcomms=r.get('lcomms','').replace("'","\\'"),
-            orig=r.get('origin',''),
-            lp=r.get('local_pref',0),
-            med=r.get('med',0),
-            peer=r.get('peer_ip',''),
-            rtr=r.get('bmp_router',''),
-            mt=r.get('bmp_msg_type','')
-        ))
-    sql = "INSERT INTO {t} (timestamp,log_type,afi,safi,ip_prefix,bgp_nexthop,as_path,comms,lcomms,origin,local_pref,med,peer_ip,bmp_router,bmp_msg_type) VALUES {v}".format(
-        t=TABLE, v=",".join(values))
-    try:
-        resp = requests.post(CLICKHOUSE, data=sql)
-        if resp.status_code != 200:
-            print(f"ERROR: {resp.text}", file=sys.stderr)
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-
-# Tail -f del archivo
-proc = subprocess.Popen(['tail', '-F', BMP_FILE], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-batch = []
-last_flush = time.time()
-
-print(f"BMP→ClickHouse ingester started, watching {BMP_FILE}")
-
-for line in iter(proc.stdout.readline, b''):
-    try:
-        row = json.loads(line.decode().strip())
-        if row.get('log_type') in ('update', 'withdraw', 'peer_up', 'peer_down'):
-            batch.append(row)
-    except:
-        continue
-
-    if len(batch) >= BATCH_SIZE or (time.time() - last_flush > 5 and batch):
-        insert_batch(batch)
-        batch = []
-        last_flush = time.time()
-PYEOF
-chmod +x /opt/pmacct/bmp-to-clickhouse.py
-```
+Configuración en [.env.example](.env.example). HTTPS por defecto; para el ClickHouse HTTP actual en red privada hay que fijar `CLICKHOUSE_ALLOW_HTTP=1` de forma explícita. Usar una cuenta con `INSERT` solo sobre `bmp_events`, distinta de la cuenta SELECT del agente.
 
 ### Paso 6 — Dockerfile del ingester
 
-```bash
-cat > /opt/pmacct/Dockerfile.ingester << 'EOF'
-FROM python:3.11-slim
-RUN pip install requests
-COPY bmp-to-clickhouse.py /app/ingester.py
-CMD ["python3", "-u", "/app/ingester.py"]
-EOF
-```
+[ingester/Dockerfile](ingester/Dockerfile): `python:3.12-slim`, sin `pip install`, usuario sin privilegios (uid 10001).
 
 ### Paso 7 — Crear tabla en ClickHouse
 
@@ -217,6 +144,12 @@ TTL inserted_at + INTERVAL 90 DAY
 "
 ```
 
+Opcional, para que los reenvíos del ingester no dupliquen filas (afecta solo a inserciones nuevas):
+
+```sql
+ALTER TABLE bmp_events MODIFY SETTING non_replicated_deduplication_window = 1000
+```
+
 ### Paso 8 — Levantar
 
 ```bash
@@ -226,33 +159,35 @@ docker compose up -d --build
 
 ### Paso 9 — Rotación y control de disco
 
-**Cron para truncar JSON cada hora** (el ingester ya metió los datos en ClickHouse):
+**Retirar el cron `truncate-bmp`.** Reescribía el archivo con `tail -100` + `mv`: el nuevo archivo tenía otro inode mientras pmbmpd seguía escribiendo en el anterior (ya desenlazado), así que se perdían eventos y el disco no se liberaba; además descartaba lo que el ingester no hubiera leído.
 
 ```bash
-cat > /etc/cron.hourly/truncate-bmp << 'EOF'
-#!/bin/bash
-FILE=/opt/pmacct/data/bmp-logs/bmp-events-198_51_100_42.json
-# Guardar últimas 100 líneas por si el ingester está leyendo
-tail -100 "$FILE" > "${FILE}.tmp"
-mv "${FILE}.tmp" "$FILE"
-EOF
-chmod +x /etc/cron.hourly/truncate-bmp
+rm /etc/cron.hourly/truncate-bmp
 ```
 
-**Logrotate como respaldo:**
+**Logrotate** ([config/logrotate-pmbmpd](config/logrotate-pmbmpd)): rota por hora o al superar 200 MB, con `copytruncate` (pmbmpd mantiene el archivo abierto) y `delaycompress`, para que el contenido anterior quede sin comprimir en `<archivo>.1`. Si el ingester no había terminado, retoma desde su checkpoint en ese `.1` antes de seguir con el archivo vivo; si el `.1` no existe o es más corto, registra `rotation_gap` en lugar de saltarse datos en silencio.
 
 ```bash
-cat > /etc/logrotate.d/pmbmpd << 'EOF'
-/opt/pmacct/data/bmp-logs/bmp-events-*.json {
-    daily
-    rotate 30
-    compress
-    missingok
-    notifempty
-    copytruncate
-}
-EOF
+cp /opt/pmacct/config/logrotate-pmbmpd /etc/logrotate.d/pmbmpd
 ```
+
+`hourly` solo se aplica si logrotate se ejecuta cada hora; en Ubuntu corre a diario por defecto. Añadir una ejecución horaria:
+
+```bash
+ln -s /usr/sbin/logrotate /etc/cron.hourly/logrotate-pmbmpd   # o un timer systemd equivalente
+```
+
+Limitación conocida de `copytruncate`: lo que pmbmpd escriba entre la copia y el truncado se pierde. Medir en laboratorio (conteo de líneas generadas frente a filas insertadas en varias rotaciones) antes de aceptar la estrategia. La alternativa sin esa ventana es rotar por renombrado si pmbmpd reabre el archivo; el ingester ya soporta ese caso, pero no se ha verificado que pmbmpd reabra.
+
+### Migración desde el ingester anterior
+
+1. Respaldar `cp /opt/pmacct/docker-compose.yml /opt/pmacct/docker-compose.yml.bak` y copiar los archivos nuevos (Paso 2) sin borrar `bmp-to-clickhouse.py` ni `Dockerfile.ingester`, que son la vuelta atrás.
+2. En `.env`, fijar `BMP_INITIAL_POSITION=end` para no reinsertar lo que el ingester anterior ya cargó. Se pierden como mucho los eventos de su último lote sin enviar (≤ 5 s o 500 filas).
+3. `docker compose up -d --build bmp-ingester` y comprobar en `docker logs bmp-ingester` los eventos `started_at_end`, `stats` y la ausencia de `insert_failed` sostenidos.
+4. Retirar el cron `truncate-bmp` e instalar logrotate.
+5. Volver a `BMP_INITIAL_POSITION=start` (solo afecta a archivos sin checkpoint, como un peer nuevo).
+
+Rollback: `cp docker-compose.yml.bak docker-compose.yml` y `docker compose up -d --build bmp-ingester`. El ingester anterior vuelve a sus limitaciones (lotes descartados ante fallos); no reinstalar el cron `truncate-bmp`.
 
 ---
 
@@ -448,13 +383,20 @@ ORDER BY timestamp DESC LIMIT 50"
 ```
 /opt/pmacct/
 ├── docker-compose.yml          ← pmbmpd + bmp-ingester
-├── Dockerfile.ingester         ← Imagen del ingester Python
-├── bmp-to-clickhouse.py        ← Script de ingesta
+├── .env                        ← Credenciales ClickHouse (no versionar)
+├── ingester/
+│   ├── Dockerfile              ← Imagen del ingester
+│   └── bmp_ingester.py         ← Ingesta con checkpoint
 ├── config/
-│   └── pmbmpd.conf             ← Config del colector BMP
+│   ├── pmbmpd.conf             ← Config del colector BMP
+│   └── logrotate-pmbmpd        ← Copiar a /etc/logrotate.d/pmbmpd
 └── data/
-    └── bmp-logs/
-        └── bmp-events-198_51_100_42.json  ← Buffer temporal (truncado cada hora)
+    ├── bmp-logs/
+    │   ├── bmp-events-198_51_100_42.json    ← Buffer (rotado por logrotate)
+    │   └── bmp-events-198_51_100_42.json.1  ← Rotación anterior sin comprimir
+    └── ingester-state/
+        ├── checkpoint.json     ← Offset confirmado por archivo
+        └── dead-letter.jsonl   ← Lotes rechazados por ClickHouse (4xx)
 ```
 
 ---
@@ -465,14 +407,17 @@ ORDER BY timestamp DESC LIMIT 50"
 # Ver logs del colector
 docker logs pmbmpd --tail 20
 
-# Ver si el ingester está insertando
+# Ver si el ingester está insertando (evento "stats" cada 60 s con lag_bytes)
 docker logs bmp-ingester --tail 5
+
+# Lotes rechazados por ClickHouse
+wc -l /opt/pmacct/data/ingester-state/dead-letter.jsonl
 
 # Reiniciar
 cd /opt/pmacct && docker compose restart
 
-# Truncar manualmente el JSON
-truncate -s 0 /opt/pmacct/data/bmp-logs/bmp-events-198_51_100_42.json
+# Rotar manualmente el JSON (no usar truncate -s 0: descarta lo no confirmado)
+logrotate -f /etc/logrotate.d/pmbmpd
 
 # Verificar tamaño del archivo
 ls -lh /opt/pmacct/data/bmp-logs/
