@@ -122,7 +122,8 @@ def evidence(entity, data, observed=None, raw_reference=None, units=None):
             "raw_reference": raw_reference}
 
 
-def result(operation, query, items, limit, warnings=(), filtered=0, timed=False):
+def result(operation, query, items, limit, warnings=(), filtered=0, timed=False, info=()):
+    """`warnings` affect coverage (status partial); `info` qualifies the data without doing so."""
     warnings = set(warnings)
     if len(items) > limit:
         warnings.add("sample_truncated")
@@ -139,6 +140,7 @@ def result(operation, query, items, limit, warnings=(), filtered=0, timed=False)
         warnings.add("snapshot_without_observed_at")
     coverage_warnings = warnings - {"snapshot_without_observed_at", "out_of_scope_filtered"}
     status = "partial" if coverage_warnings else ("ok" if shown else "empty")
+    warnings |= set(info)
     return {"schema_version": 1, "source": "librenms", "operation": operation, "status": status,
             "collected_at": collected, "query": query, "evidence": shown,
             "coverage": {"returned": len(shown), "available": len(items), "limit": limit,
@@ -273,12 +275,113 @@ def op_sensors(scope, args):
         units = {k: unit for k in data if unit and (k == "sensor_current" or k.startswith("sensor_limit"))}
         items.append(evidence({"device": hostname, "sensor": g.get("sensor_descr") or g.get("desc")}, data,
                               raw_reference={"sensor_id": g.get("sensor_id")}, units=units))
-    warnings = []
-    if args.sensor_class == "dbm":
-        # LibreNMS may fill limits itself; they are not proof of vendor DOM thresholds.
-        warnings.append("limits_origin_unverified")
+    # LibreNMS may fill limits itself; they are not proof of vendor DOM thresholds.
+    info = ["limits_origin_unverified"] if args.sensor_class == "dbm" else []
     query = {"device": hostname, "class": args.sensor_class, "sensor_id": args.sensor_id}
-    return result("sensors", query, items, args.limit, warnings)
+    return result("sensors", query, items, args.limit, info=info)
+
+
+MAX_OPTIC_SENSORS = 64
+RX = re.compile(r"\b(rx|receive[rd]?|input)\b", re.I)
+TX = re.compile(r"\b(tx|transmit(ter)?|output)\b", re.I)
+
+
+def number(value):
+    """Finite float from int/float/numeric string; None otherwise (never 0 by default)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed == parsed and parsed not in (float("inf"), float("-inf")) else None
+
+
+def optical_margins(current, low, high, low_warn=None, high_warn=None):
+    """Margins in dB from a dBm reading and dBm limits. Missing limits stay missing."""
+    out = {"lower_margin_db": None, "upper_margin_db": None, "state": None, "notes": []}
+    if current is None:
+        out["state"] = "no_reading"
+        return out
+    if low is not None and high is not None and low >= high:
+        out["state"] = "limits_incompatible"
+        return out
+    if low is not None:
+        out["lower_margin_db"] = round(current - low, 2)
+    if high is not None:
+        out["upper_margin_db"] = round(high - current, 2)
+    if low is None and high is None:
+        out["state"] = "limits_missing"
+    elif low is not None and current < low:
+        out["state"] = "below_low"
+    elif high is not None and current > high:
+        out["state"] = "above_high"
+    elif low_warn is not None and current < low_warn:
+        out["state"] = "warn_low"
+    elif high_warn is not None and current > high_warn:
+        out["state"] = "warn_high"
+    else:
+        out["state"] = "within_limits"
+    if low is None and high is not None:
+        out["notes"].append("lower_limit_missing")
+    if high is None and low is not None:
+        out["notes"].append("upper_limit_missing")
+    return out
+
+
+def op_optics(scope, args):
+    hostname = scope.check(host(args.device))
+    if args.interface is not None and not INTERFACE.fullmatch(args.interface):
+        raise ValueError("Interfaz inválida")
+    base = f"devices/{hostname}/health/device_dbm"
+    sensors = fetch(base, {}, "graphs")
+    warnings, info = set(), {"limits_origin_unverified"}
+    if args.interface is not None:
+        pattern = re.compile(rf"(?<![A-Za-z0-9/]){re.escape(args.interface)}(?![0-9/])", re.I)
+        sensors = [s for s in sensors if pattern.search(str(s.get("sensor_descr") or s.get("desc") or ""))]
+    if len(sensors) > MAX_OPTIC_SENSORS:
+        sensors = sensors[:MAX_OPTIC_SENSORS]
+        warnings.add("sensor_list_truncated")
+    items = []
+    for s in sensors:
+        if "sensor_current" not in s:
+            # The type listing may carry only ids and descriptions; read each sensor explicitly.
+            sensor_id = s.get("sensor_id")
+            if type(sensor_id) is not int or sensor_id < 1:
+                warnings.add("sensor_without_id")
+                continue
+            detail = fetch(f"{base}/{sensor_id}", {}, "graphs")
+            if len(detail) != 1:
+                raise ContractError("Se esperaba un sensor")
+            s = {**s, **detail[0]}
+        descr = str(s.get("sensor_descr") or s.get("desc") or "")
+        values = {k: number(s.get(k)) for k in ("sensor_current", "sensor_limit_low", "sensor_limit",
+                                               "sensor_limit_low_warn", "sensor_limit_warn")}
+        margins = optical_margins(values["sensor_current"], values["sensor_limit_low"], values["sensor_limit"],
+                                  values["sensor_limit_low_warn"], values["sensor_limit_warn"])
+        direction = "rx" if RX.search(descr) else "tx" if TX.search(descr) else "unknown"
+        data = {"sensor_descr": descr, "direction": direction, "current_dbm": values["sensor_current"],
+                "limit_low_dbm": values["sensor_limit_low"], "limit_high_dbm": values["sensor_limit"],
+                "warn_low_dbm": values["sensor_limit_low_warn"], "warn_high_dbm": values["sensor_limit_warn"],
+                **margins}
+        units = {k: "dBm" for k in data if k.endswith("_dbm")} | {k: "dB" for k in data if k.endswith("_db")}
+        items.append(evidence({"device": hostname, "sensor": descr, "direction": direction}, data,
+                              raw_reference={"sensor_id": s.get("sensor_id")}, units=units))
+    rank = {"below_low": 0, "above_high": 0, "warn_low": 1, "warn_high": 1, "within_limits": 2,
+            "limits_missing": 3, "limits_incompatible": 3, "no_reading": 3}
+
+    def risk(item):
+        d = item["data"]
+        margins = [m for m in (d["lower_margin_db"], d["upper_margin_db"]) if m is not None]
+        return (rank[d["state"]], min(margins) if margins else float("inf"))
+
+    items.sort(key=risk)
+    if any(i["data"]["state"] in ("limits_missing", "limits_incompatible", "no_reading") for i in items):
+        info.add("sensors_without_usable_limits")
+    if any(i["data"]["direction"] == "unknown" for i in items):
+        info.add("direction_unresolved")
+    query = {"device": hostname, "interface": args.interface}
+    return result("optics", query, items, args.limit, warnings, info=info)
 
 
 def op_eventlog(scope, args):
@@ -293,7 +396,7 @@ def op_eventlog(scope, args):
 
 
 OPERATIONS = {"resolve": op_resolve, "devices": op_devices, "ports": op_ports, "bgp": op_bgp,
-              "alerts": op_alerts, "sensors": op_sensors, "eventlog": op_eventlog}
+              "alerts": op_alerts, "sensors": op_sensors, "optics": op_optics, "eventlog": op_eventlog}
 
 
 def parser():
@@ -323,6 +426,9 @@ def parser():
     s.add_argument("--device", required=True)
     s.add_argument("--class", dest="sensor_class", choices=SENSOR_CLASSES, required=True)
     s.add_argument("--sensor-id", type=int)
+    s = add("optics", "Potencia óptica con márgenes en dB, ordenada por riesgo")
+    s.add_argument("--device", required=True)
+    s.add_argument("--interface")
     s = add("eventlog", "Eventlog de un equipo")
     s.add_argument("--device", required=True)
     return p

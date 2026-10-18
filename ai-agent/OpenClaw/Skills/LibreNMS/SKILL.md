@@ -47,6 +47,10 @@ python3 tools/librenms_query.py alerts --state active --severity critical
 python3 tools/librenms_query.py sensors --device 192.0.2.2 --class dbm
 python3 tools/librenms_query.py sensors --device 192.0.2.2 --class dbm --sensor-id 123
 
+# ópticas: márgenes en dB ordenados por riesgo (todas o de una interfaz)
+python3 tools/librenms_query.py optics --device 192.0.2.2
+python3 tools/librenms_query.py optics --device 192.0.2.2 --interface Ethernet1/1
+
 # eventlog de un equipo
 python3 tools/librenms_query.py eventlog --device 192.0.2.2 --limit 20
 ```
@@ -65,6 +69,7 @@ python3 tools/librenms_query.py eventlog --device 192.0.2.2 --limit 20
 - `ifInOctets_rate`/`ifOutOctets_rate` en bytes/s: Mbps = valor × 8 / 1 000 000; Gbps = valor × 8 / 1 000 000 000.
 - `ifSpeed` en bit/s. `uptime` y `bgpPeerFsmEstablishedTime` en segundos.
 - Sensores `dbm`: `sensor_current` y límites en dBm. Margen inferior = actual − `sensor_limit_low`; margen superior = `sensor_limit` − actual, ambos en dB.
+- `optics` ya calcula `lower_margin_db`/`upper_margin_db` y `state`: `below_low`, `above_high` (fuera de límite), `warn_low`, `warn_high`, `within_limits`, `limits_missing`, `limits_incompatible`, `no_reading`. Un margen negativo es una violación. `direction` (rx/tx/unknown) sale de la descripción del sensor; con `direction_unresolved`, no afirmar si es potencia recibida o transmitida.
 
 ## Reglas
 - Usar LibreNMS para estado actual; Graylog para histórico de logs.
