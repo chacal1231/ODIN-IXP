@@ -2,7 +2,7 @@
 
 ## Estado de la remediación
 
-El 2026-10-18 se comprobó con `git ls-remote` que GitHub `main` apunta a `<commit-retirado>`. Ese commit contiene los tokens literales de los Skills y el `.env` de Graylog. Por tanto, no son únicamente commits locales. No se ha reescrito ni publicado historial durante esta remediación.
+El 2026-10-18 se comprobó con `git ls-remote` que GitHub `main` apunta a `<commit-retirado>`. Ese commit contiene los tokens literales de los Skills y el `.env` de Graylog. Por tanto, no son únicamente commits locales. Posteriormente se reescribió y publicó el historial limpio; consultar [el informe de limpieza](refactor/SECURITY_CLEANUP.md).
 
 Los tokens se retiraron de los Skills. `.env` queda excluido del seguimiento, con su archivo local conservado para no romper una instalación existente. Las plantillas no contienen credenciales. Los ejemplos SNMP ya no incluyen la comunidad literal. El setup deja de imprimir el secret y conserva secretos de instalaciones existentes; no se debe regenerar `GRAYLOG_PASSWORD_SECRET` arbitrariamente porque se usa para datos cifrados.
 
@@ -35,4 +35,4 @@ Compose exige `OPENSEARCH_INITIAL_ADMIN_PASSWORD` externo; el setup lo genera pa
 
 Ocho pruebas unitarias del cliente pasaron con Python 3.14: orígenes inseguros, escape de rutas, GET/autenticación/codificación, bloqueo de redirecciones, inyección en headers, tamaño/JSON inválido, errores sin secretos y límites de consulta. Ejecutar `python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p test_read_api.py -v` desde la raíz del repo. No usan credenciales reales ni conectividad externa.
 
-También se verificó que los tokens anteriores no aparecen en los archivos distribuibles de IXP, que `.env` permanece local e ignorado y que `git diff --check` pasa. Bash y Docker no están disponibles: setup y Compose fueron revisados estáticamente, pero no ejecutados ni validados con esos runtimes. El historial conserva secretos hasta una limpieza coordinada y las credenciales siguen siendo válidas hasta su revocación efectiva.
+También se verificó que los tokens anteriores no aparecen en los archivos distribuibles de IXP, que `.env` permanece local e ignorado y que `git diff --check` pasa. Bash y Docker no están disponibles: setup y Compose fueron revisados estáticamente, pero no ejecutados ni validados con esos runtimes. La rama main publicada y el checkout local usan el historial limpio. Las credenciales siguen siendo válidas hasta su revocación efectiva; copias externas y referencias antiguas de GitHub requieren atención aparte.
