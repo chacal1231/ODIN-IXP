@@ -10,6 +10,10 @@ import urllib.parse
 import urllib.request
 
 
+class ResponseError(ValueError):
+    """The remote answered, but the body is unusable (too large or not decodable)."""
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -47,8 +51,11 @@ def request(source, path, params):
     with opener.open(req, timeout=20) as response:
         body = response.read(2_000_001)
     if len(body) > 2_000_000:
-        raise ValueError("Respuesta excede el límite; acote la consulta")
-    return json.loads(body)
+        raise ResponseError("Respuesta excede el límite; acote la consulta")
+    try:
+        return json.loads(body)
+    except UnicodeDecodeError:
+        raise ResponseError("Respuesta no decodificable") from None
 
 
 def main():

@@ -55,10 +55,11 @@ class ClientSecurityTests(unittest.TestCase):
                 read_api.request("graylog", "search/universal/relative", {})
 
     def test_oversize_and_invalid_json(self):
-        for body in [b'x' * 2_000_001, b'not-json']:
+        for body, error in [(b'x' * 2_000_001, read_api.ResponseError), (b'\xff\xfe\xfa', read_api.ResponseError),
+                            (b'not-json', ValueError)]:
             with self.subTest(size=len(body)), patch("urllib.request.build_opener") as factory:
                 factory.return_value.open.return_value.__enter__.return_value.read.return_value = body
-                with self.assertRaises(ValueError):
+                with self.assertRaises(error):
                     read_api.request("librenms", "devices", {})
 
     def test_errors_do_not_expose_response_or_secret(self):
