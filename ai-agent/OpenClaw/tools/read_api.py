@@ -36,6 +36,8 @@ def request(source, path, params):
             raise ValueError("Ruta ClickHouse no permitida")
     elif not re.fullmatch(r"[A-Za-z0-9_.:/-]+", path) or ".." in path or path.startswith("/"):
         raise ValueError("Ruta inválida")
+    if source == "ixpmanager" and path != "member-export/ixf/1.0":
+        raise ValueError("Ruta IXP Manager no permitida")
     if source == "graylog" and path != "search/universal/relative":
         raise ValueError("Ruta Graylog no permitida")
     if source == "librenms" and path.split("/")[0] not in {
@@ -51,6 +53,8 @@ def request(source, path, params):
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", user):
             raise ValueError("AKVORADO_USER ausente o inválido")
         headers["X-ClickHouse-User"], headers["X-ClickHouse-Key"] = user, token
+    elif source == "ixpmanager":
+        headers["X-IXP-Manager-API-Key"] = token
     else:
         headers["X-Auth-Token"] = token
     url = base + "/" + path + "?" + urllib.parse.urlencode(params)
@@ -58,9 +62,11 @@ def request(source, path, params):
     req = urllib.request.Request(url, headers=headers, method="GET")
     # Ignore ambient proxies; do not forward credentials to redirect destinations.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    # The IX-F export lists every member in one document; other sources answer bounded queries.
+    max_bytes = 10_000_000 if source == "ixpmanager" else 2_000_000
     with opener.open(req, timeout=20) as response:
-        body = response.read(2_000_001)
-    if len(body) > 2_000_000:
+        body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
         raise ResponseError("Respuesta excede el límite; acote la consulta")
     try:
         return json.loads(body)

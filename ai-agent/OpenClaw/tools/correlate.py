@@ -10,6 +10,7 @@ import sys
 
 import akvorado_query
 import graylog_query
+import ixpmanager_query
 import librenms_query
 
 # Always part of the report: what this correlation cannot establish.
@@ -114,6 +115,35 @@ def graylog(report, args, label, extra):
     return report.add_source(label, call(graylog_query, argv))
 
 
+def members(report, args, sessions, label):
+    """Identify BGP peers as IXP members by exact peering-LAN address in IXP Manager."""
+    if not args.ixp_manager:
+        report.gap("source_not_requested", label="ixpmanager", reason="no --ixp-manager given")
+        return
+    peers = sorted({s["entity"].get("peer") for s in sessions if s["entity"].get("peer")})[:ixpmanager_query.MAX_ADDRESSES]
+    if not peers:
+        return
+    argv = ["ips", "--limit", "500"] + [a for p in peers for a in ("--address", p)]
+    result = call(ixpmanager_query, argv)
+    found = report.add_source("ixpmanager.ips", result) or []
+    by_address = {}
+    for item in found:
+        by_address.setdefault(item["data"]["address"], []).append(item)
+    for s in sessions:
+        peer = s["entity"].get("peer")
+        for item in by_address.get(peer, []):
+            report.finding("derived", "peer_is_ixp_member", [ref(label, s), ref("ixpmanager.ips", item)],
+                           peer=peer, asn=item["data"]["asn"], member=item["data"]["member"],
+                           routeserver=item["data"]["routeserver"], connection_state=item["data"]["connection_state"])
+            remote = s["entity"].get("remote_asn")
+            if remote is not None and str(remote) != str(item["data"]["asn"]):
+                report.finding("contradiction", "peer_asn_differs_from_ixp_manager",
+                               [ref(label, s), ref("ixpmanager.ips", item)], peer=peer,
+                               librenms_remote_asn=remote, ixp_manager_asn=item["data"]["asn"])
+    if result.get("not_found"):
+        report.gap("peers_not_in_ixp_manager", addresses=result["not_found"])
+
+
 def librenms(report, label, argv):
     return report.add_source(label, call(librenms_query, argv))
 
@@ -153,6 +183,7 @@ def case_port_down(report, args):
         report.finding("hypothesis", "bgp_sessions_down_on_same_device",
                        [ref("librenms.bgp", s) for s in down], peers=[s["entity"].get("peer") for s in down],
                        confidence="low", note="no interface-to-peer mapping verified")
+        members(report, args, down, "librenms.bgp")
     traffic(report, args, args.minutes)
 
 
@@ -208,6 +239,7 @@ def case_bgp(report, args):
                            [ref("librenms.bgp", s), ref("graylog.bgp", last)], peer=peer,
                            librenms_state=s["data"].get("bgpPeerState"), last_log_state=last["data"]["bgp_state"],
                            note="compare log time with LibreNMS poll time before concluding")
+    members(report, args, sessions, "librenms.bgp")
     # Route-level changes (updates/withdrawals) need PMACCT, which has no read client yet.
     report.gap("source_not_integrated", label="pmacct", reason="route updates and withdrawals not covered")
 
@@ -223,6 +255,7 @@ def main(argv=None):
     p.add_argument("--neighbor")
     p.add_argument("--graylog-source", help="Nombre del mismo equipo en Graylog")
     p.add_argument("--exporter", help="Nombre del mismo equipo en Akvorado")
+    p.add_argument("--ixp-manager", action="store_true", help="Identificar peers BGP como miembros en IXP Manager")
     p.add_argument("--minutes", type=int, default=60)
     args = p.parse_args(argv)
     if args.case in ("port-down", "degradation") and not args.interface:
