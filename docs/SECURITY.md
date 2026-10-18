@@ -15,7 +15,7 @@ Los tokens se retiraron de los Skills. `.env` queda excluido del seguimiento, co
 
 ## Consultas del agente
 
-Instalar `tools/read_api.py` en la raíz del workspace de OpenClaw junto a `tools/`, y mantener las variables de `.env.example` fuera de prompts y Skills. El cliente usa Python 3 sin dependencias externas; no carga automáticamente archivos `.env`. Inyectar las variables mediante el gestor de procesos/contenedor. No habilitar `set -x` ni volcar el entorno.
+Instalar `tools/read_api.py`, `tools/graylog_query.py` y `tools/librenms_query.py` en `tools/` del workspace de OpenClaw. Los Skills usan solo los clientes estructurados; `read_api.py` es su transporte y su CLI genérica no debe ofrecerse al agente (permite rutas y parámetros libres dentro de los prefijos permitidos). Configurar `LIBRENMS_ALLOWED_DEVICES` y `LIBRENMS_TIMEZONE` igual que `GRAYLOG_ALLOWED_SOURCES`, y mantener las variables de `.env.example` fuera de prompts y Skills. El cliente usa Python 3 sin dependencias externas; no carga automáticamente archivos `.env`. Inyectar las variables mediante el gestor de procesos/contenedor. No habilitar `set -x` ni volcar el entorno.
 
 El cliente exige HTTPS con certificado válido; no admite desactivar validación TLS. Para los endpoints HTTP existentes hace falta un proxy TLS o túnel seguro con terminación TLS antes de migrar los Skills. La exigencia de HTTPS es un cambio deliberado de compatibilidad: no funcionarán las URLs HTTP antiguas. No se verificó conectividad con producción. El cliente solo ejecuta GET, bloquea redirecciones y proxies ambientales, codifica parámetros, limita tamaño y tiempo de socket y sanea errores. El hostname procede exclusivamente del entorno administrado, no de la pregunta del usuario.
 
