@@ -1,0 +1,164 @@
+# ============================================================
+# Graylog Stack - odin.example.net
+# Graylog 6.1 + OpenSearch 2.15 + MongoDB 7.0
+#
+# Puertos expuestos:
+#   9000  - Web UI + API REST (TCP)
+#   1514  - Syslog TCP (desde los PEs)
+#   1514  - Syslog UDP (desde los PEs)
+#   5044  - Beats input (opcional, para agentes)
+#   12201 - GELF TCP (opcional, para apps)
+#   12201 - GELF UDP (opcional, para apps)
+# ============================================================
+
+services:
+
+  # --- MongoDB (almacena configuración de Graylog) ---
+  mongodb:
+    image: mongo:${MONGO_VERSION:-7.0}
+    container_name: graylog-mongodb
+    restart: unless-stopped
+    environment:
+      - TZ=America/Bogota
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - graylog-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # --- OpenSearch (almacena los logs indexados) ---
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    container_name: graylog-opensearch
+    restart: unless-stopped
+    environment:
+      - TZ=America/Bogota
+      - cluster.name=graylog-cluster
+      - node.name=opensearch-node1
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - action.auto_create_index=false
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms8g -Xmx8g}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=TOKEN
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - graylog-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 18G
+
+  # --- Graylog Server ---
+  graylog:
+    image: graylog/graylog:6.1
+    container_name: graylog-server
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    environment:
+      # Timezone
+      - TZ=America/Bogota
+
+      # Configuración base
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
+      - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}
+      - GRAYLOG_ROOT_TIMEZONE=${GRAYLOG_TIMEZONE:-America/Bogota}
+
+      # Conexión a OpenSearch
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
+
+      # Conexión a MongoDB
+      - GRAYLOG_MONGODB_URI=mongodb://mongodb:27017/graylog
+
+      # Configuración de rendimiento
+      - GRAYLOG_PROCESSBUFFER_PROCESSORS=5
+      - GRAYLOG_OUTPUTBUFFER_PROCESSORS=3
+      - GRAYLOG_PROCESSOR_WAIT_STRATEGY=blocking
+
+      # Retención de indices (90 días por defecto)
+      - GRAYLOG_ROTATION_STRATEGY=time
+      - GRAYLOG_ELASTICSEARCH_MAX_TIME_PER_INDEX=1d
+      - GRAYLOG_ELASTICSEARCH_MAX_NUMBER_OF_INDICES=90
+
+      # Journal (buffer en disco)
+      - GRAYLOG_MESSAGE_JOURNAL_MAX_SIZE=10gb
+
+      # Heap de Graylog
+      - GRAYLOG_SERVER_JAVA_OPTS=-Xms2g -Xmx2g -XX:+UseG1GC
+
+    ports:
+      # Web UI + API REST
+      - "9000:9000"
+      # Syslog TCP
+      - "1514:1514/tcp"
+      # Syslog UDP
+      - "1514:1514/udp"
+      # Beats input (para agentes Filebeat, etc.)
+      - "5044:5044/tcp"
+      # GELF TCP (para aplicaciones)
+      - "12201:12201/tcp"
+      # GELF UDP
+      - "12201:12201/udp"
+
+    volumes:
+      - graylog_data:/usr/share/graylog/data
+      - graylog_journal:/usr/share/graylog/data/journal
+      - /etc/localtime:/etc/localtime:ro
+
+    networks:
+      - graylog-net
+
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+# --- Volúmenes persistentes ---
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  opensearch_data:
+    driver: local
+  graylog_data:
+    driver: local
+  graylog_journal:
+    driver: local
+
+# --- Red interna ---
+networks:
+  graylog-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
