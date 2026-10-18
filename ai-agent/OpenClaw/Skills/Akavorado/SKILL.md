@@ -5,7 +5,11 @@ description: Consultar trafico de red via Akvorado/ClickHouse. Usar cuando pregu
 
 # Akvorado — ClickHouse
 
-Query: `curl -s "http://198.51.100.37:8123/" --data-binary "SQL FORMAT JSON"`
+## ESTADO: ejecución autónoma deshabilitada
+
+No ejecutar curl ni SQL contra ClickHouse desde el agente. Este Skill queda como referencia del esquema hasta que exista un cliente con cuenta SELECT, transporte protegido y consultas parametrizadas (fase P3 de `docs/refactor/PLAN.md`). Si preguntan por tráfico, responder que la fuente Akvorado no está habilitada para consultas del agente y sugerir LibreNMS (`ifInOctets_rate`/`ifOutOctets_rate`) como dato aproximado de interfaz. Nunca construir SQL con texto del operador.
+
+Endpoint: configurado por el administrador fuera del Skill; no incluir IPs ni hostnames aquí.
 
 CRITICO: volumen real = `sum(Bytes*SamplingRate)`. Siempre multiplicar.
 

@@ -5,9 +5,11 @@ description: Consultar métricas gNMIc vía /metrics. Usar para contadores de tr
 
 # gNMIc Metrics
 
-Endpoint Prometheus text format: `curl -s http://odin.example.net:9804/metrics`
+## ESTADO: ejecución autónoma deshabilitada
 
-Patrón de consulta: `curl -s URL | grep '^METRICA{' | grep 'source="PE"'`
+No ejecutar curl/grep contra el endpoint de métricas desde el agente. Este Skill queda como referencia de métricas y labels hasta que exista un cliente acotado (fase P3 de `docs/refactor/PLAN.md`). Si preguntan por estas métricas, responder que la fuente gNMI no está habilitada para consultas del agente. Nunca interpolar texto del operador en grep ni en shell.
+
+Endpoint Prometheus text format: configurado por el administrador fuera del Skill; no incluir IPs ni hostnames aquí.
 
 ## Métricas
 Interfaces (prefijo `interfaces_interface_state_counters_`):
@@ -21,15 +23,7 @@ BGP (prefijo `network_instances_network_instance_protocols_protocol_bgp_neighbor
 - `interface_name` — para interfaces
 - `neighbor_neighbor_address` — para BGP
 
-## Descubrimiento
-```sh
-# Métricas disponibles
-curl -s http://odin.example.net:9804/metrics | grep -E '^[a-zA-Z_]' | cut -d'{' -f1 | sort -u
-# Sources/PEs activos
-curl -s http://odin.example.net:9804/metrics | grep -oP 'source="\K[^"]+' | sort -u
-```
-
 ## Reglas
-- No asumir métricas; descubrir primero con el comando de arriba
+- No asumir métricas; las listadas son referencia, confirmar con el cliente cuando exista
 - Siempre filtrar por source
 - Datos son counters monotónicos (no rates)
