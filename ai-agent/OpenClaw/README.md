@@ -1,5 +1,7 @@
 # Guía de Instalación — OpenClaw con Docker + Telegram + Skills Personalizados
 
+> Seguridad: para los Skills de IXP, seguir [SECURITY.md](../../docs/SECURITY.md). Instalar `tools/` en la raíz del workspace y suministrar secretos por entorno. Las recetas curl de esta guía son ejemplos históricos; no usarlas para introducir credenciales ni texto del operador en shell. El cliente de consulta nuevo requiere HTTPS y Python 3.
+
 ## Requisitos Previos
 
 - **Sistema operativo**: Ubuntu 22.04 / 24.04 (o cualquier Linux con Docker)
@@ -369,7 +371,7 @@ docker compose run --rm openclaw-cli doctor
 ```bash
 # Solo permitir SSH y el puerto del gateway
 sudo ufw allow 22
-sudo ufw allow 18789
+sudo ufw allow from <IP_ADMINISTRACION> to any port 18789 proto tcp
 sudo ufw enable
 ```
 
@@ -382,7 +384,7 @@ sudo ufw enable
 | Bot no responde en Telegram | Verificar `botToken`, reiniciar gateway, revisar logs |
 | "tools.profile (coding) allowlist contains unknown entries" | Normal con algunos modelos, no afecta funcionalidad |
 | Skill no ejecuta comandos | Cambiar a un modelo más capaz (gpt-4.1 mínimo) |
-| Error de red en skills con curl | Verificar que el sandbox esté en `"mode": "off"` o con red habilitada |
+| Error de red en skills con curl | Autorizar únicamente los endpoints necesarios en la política de red; conservar el sandbox activo |
 | Polling stall en Telegram | Se recupera automáticamente; si persiste, reiniciar gateway |
 | Pairing no funciona | `docker compose run --rm openclaw-cli pairing list` para ver pendientes |
 | Alcanza límite de tokens rápido | Cambiar a modelo con más contexto (gpt-4.1 = 1M tokens) |

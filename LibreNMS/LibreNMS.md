@@ -60,7 +60,7 @@ Cambiar:
 
 ```
 TZ=America/Bogota
-LIBRENMS_SNMP_COMMUNITY=TOKEN
+LIBRENMS_SNMP_COMMUNITY=<SNMP_COMMUNITY_PRIVADA>
 ```
 
 ## Paso 3 — Cambiar el puerto de la Web UI
@@ -122,9 +122,9 @@ Debe mostrar `[OK]` en la mayoría de componentes.
 
 ```
 configure terminal
-snmp-server community TOKEN ro
+snmp-server community <SNMP_COMMUNITY_PRIVADA> ro
 snmp-server vrf MANAGEMENT
-snmp-server host odin.example.net version 2c TOKEN
+snmp-server host odin.example.net version 2c <SNMP_COMMUNITY_PRIVADA>
 snmp-server enable traps
 snmp-server location "Bogota, Colombia [4.6097, -74.0817]"
 end
@@ -162,11 +162,11 @@ Devices → Add Device → ingresar IP de management, community SNMP y versión.
 
 ```bash
 # Agregar un PE
-docker compose exec --user librenms librenms lnms device:add 192.0.2.2 --v2c -c TOKEN
+docker compose exec --user librenms librenms lnms device:add 192.0.2.2 --v2c -c <SNMP_COMMUNITY_PRIVADA>
 
 # Agregar varios PEs
 for IP in 192.0.2.2 192.0.2.3 192.0.2.4 192.0.2.5; do
-  docker compose exec --user librenms librenms lnms device:add $IP --v2c -c TOKEN
+  docker compose exec --user librenms librenms lnms device:add $IP --v2c -c <SNMP_COMMUNITY_PRIVADA>
 done
 ```
 
@@ -289,7 +289,7 @@ docker compose exec --user librenms librenms php /opt/librenms/poller.php -h IP_
 
 ```bash
 # Probar SNMP desde el contenedor
-docker compose exec librenms snmpwalk -v2c -c TOKEN IP_DEL_PE sysName.0
+docker compose exec librenms snmpwalk -v2c -c <SNMP_COMMUNITY_PRIVADA> IP_DEL_PE sysName.0
 ```
 
 Si falla:

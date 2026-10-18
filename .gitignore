@@ -1,0 +1,9 @@
+# Runtime secrets (templates remain versioned).
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+__pycache__/
+*.pyc
