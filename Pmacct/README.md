@@ -57,11 +57,11 @@ docker compose down
 
 ### Paso 2 — Crear estructura de pmacct
 
-Los archivos de despliegue están versionados en este directorio (`IXP/Pmacct/`). Copiarlos al host:
+Los archivos de despliegue están versionados en este directorio (`Pmacct/` de la rama `ixp`). Copiarlos al host desde la raíz del repositorio:
 
 ```bash
 mkdir -p /opt/pmacct/data/{bmp-logs,ingester-state}
-cp -r IXP/Pmacct/{config,ingester,docker-compose.yml,.env.example} /opt/pmacct/
+cp -r Pmacct/{config,ingester,docker-compose.yml,.env.example} /opt/pmacct/
 cp /opt/pmacct/.env.example /opt/pmacct/.env   # completar credenciales; no versionar
 chmod 600 /opt/pmacct/.env
 # El ingester corre como uid 10001 y guarda allí su checkpoint

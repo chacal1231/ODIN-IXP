@@ -25,9 +25,12 @@ Las menciones a «producción» en las guías describen el despliegue declarado 
 
 ## Estructura
 
+Rama `ixp` del repositorio (el proyecto ISP vive en la rama `isp`):
+
 ```
-IXP/
+./
 ├── README.md                  ← Este archivo
+├── .github/workflows/ixp.yml  ← CI: pruebas de los clientes y gitleaks
 ├── docs/
 │   ├── SECURITY.md            ← Acciones pendientes, configuración segura del agente, despliegue Graylog
 │   ├── architecture/
@@ -51,8 +54,8 @@ IXP/
 ## Inicio rápido
 
 ```bash
-git clone https://github.com/chacal1231/ODIN.git
-cd ODIN/IXP
+git clone --branch ixp https://github.com/chacal1231/ODIN.git
+cd ODIN
 ```
 
 Cada componente se despliega por separado en su host:
@@ -65,7 +68,7 @@ Cada componente se despliega por separado en su host:
 Pruebas de los clientes del agente, desde la raíz del repositorio:
 
 ```bash
-python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v
+python -m unittest discover -s ai-agent/OpenClaw/tools -p "test_*.py" -v
 ```
 
 ## Convenciones

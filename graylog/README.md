@@ -12,7 +12,7 @@
 
 ## Despliegue
 
-Desde este directorio (`IXP/graylog/`), en el host Linux de Graylog:
+Desde este directorio (`graylog/`), en el host Linux de Graylog:
 
 ```bash
 sudo bash 01-install-docker.sh      # solo si Docker no está instalado; actualiza el sistema y añade el usuario al grupo docker
@@ -104,7 +104,7 @@ OpenSearch no procesa al ritmo de entrada.
 ## Archivos
 
 ```
-IXP/graylog/
+graylog/
 ├── README.md                  ← Este archivo
 ├── 03-configuracion-PEs.md    ← Inputs, PEs, extractors, streams, alertas y verificación
 ├── docker-compose.yml         ← Graylog + OpenSearch + MongoDB

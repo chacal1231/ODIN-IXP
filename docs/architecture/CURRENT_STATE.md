@@ -1,6 +1,6 @@
 # Estado actual de IXP
 
-Actualizado: 2026-10-18. Alcance: `IXP/` del repositorio `chacal1231/ODIN`; `ISP/` queda fuera. Lo pendiente está en el [plan](../refactor/PLAN.md).
+Actualizado: 2026-10-18. Alcance: rama `ixp` del repositorio `chacal1231/ODIN`; el proyecto ISP (rama `isp`) queda fuera. Lo pendiente está en el [plan](../refactor/PLAN.md).
 
 ## Inventario
 

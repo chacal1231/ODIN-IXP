@@ -6,7 +6,7 @@
 2. Revisar el `.env` de Graylog expuesto: cambiar el password admin, las credenciales reutilizadas y la comunidad SNMP si estaba en uso. Migrar a SNMPv3 cuando sea viable. Cambiar `GRAYLOG_PASSWORD_SECRET` requiere el procedimiento compatible con la versión de Graylog y un respaldo, porque cifra datos; no ejecutar setup para rotarlo.
 3. Revisar accesos y logs de autenticación de las plataformas. La revisión del repositorio no prueba ni descarta uso indebido.
 4. Historial reescrito: pedir a los colaboradores clones nuevos y revisar forks. No mezclar ni publicar ramas antiguas: un merge puede reintroducir el historial contaminado.
-5. Acceso residual en GitHub: el commit antiguo `<commit-retirado>` y `IXP/graylog/.env` bajo ese SHA seguían devolviendo HTTP 200 tras la reescritura. Si la rotación no mitiga el riesgo, solicitar la purga a GitHub Support siguiendo [el procedimiento oficial](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository). No incluir credenciales en el ticket.
+5. Acceso residual en GitHub: el commit antiguo `<commit-retirado>` y `IXP/graylog/.env` (ruta en ese commit, antes de separar las ramas) bajo ese SHA seguían devolviendo HTTP 200 tras la reescritura. Si la rotación no mitiga el riesgo, solicitar la purga a GitHub Support siguiendo [el procedimiento oficial](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository). No incluir credenciales en el ticket.
 
 Borrador para GitHub Support (no enviado):
 
@@ -33,7 +33,7 @@ El ejecutor debe pasar argumentos como lista, nunca una cadena de shell con text
 
 ## Despliegue Graylog
 
-Copiar `IXP/graylog/.env.example` a `.env` en una instalación nueva y ejecutar `bash 02-setup-graylog.sh` únicamente en el host Linux correspondiente. En una instalación existente preservar el secret y revisar el entorno manualmente. El setup no modifica el firewall ni imprime claves.
+Copiar `graylog/.env.example` a `.env` en una instalación nueva y ejecutar `bash 02-setup-graylog.sh` únicamente en el host Linux correspondiente. En una instalación existente preservar el secret y revisar el entorno manualmente. El setup no modifica el firewall ni imprime claves.
 
 La Web/API se enlaza a `127.0.0.1` por defecto. Acceder mediante túnel o proxy TLS autenticado. Si se configura `GRAYLOG_HTTP_BIND` para una dirección de gestión, restringirla mediante firewall. Ajustar `GRAYLOG_HTTP_EXTERNAL_URI` a la URL real protegida. Los puertos de ingesta siguen publicados para syslog: restringir orígenes a los PEs autorizados y revisar los puertos opcionales GELF/Beats antes de exponerlos. OpenSearch está en red interna sin autenticación: no publicarlo y admitir solo servicios de confianza en su red.
 
@@ -42,7 +42,7 @@ Compose exige `OPENSEARCH_INITIAL_ADMIN_PASSWORD` externo; el setup lo genera pa
 ## Verificación
 
 ```sh
-python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v
+python -m unittest discover -s ai-agent/OpenClaw/tools -p "test_*.py" -v
 ```
 
 El workflow `.github/workflows/ixp.yml` ejecuta esa suite y gitleaks en cada push a `main` y en cada PR. Las pruebas no usan credenciales reales ni conectividad externa.

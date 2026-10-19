@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Pruebas de clientes de consulta
-        run: python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v
+        run: python -m unittest discover -s ai-agent/OpenClaw/tools -p "test_*.py" -v
 
   secrets:
     runs-on: ubuntu-24.04

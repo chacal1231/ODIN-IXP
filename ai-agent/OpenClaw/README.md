@@ -150,9 +150,9 @@ Desde la raíz del repositorio ODIN:
 ```bash
 WS=~/.openclaw/workspace
 mkdir -p "$WS/skills" "$WS/tools"
-cp -r IXP/ai-agent/OpenClaw/Skills/{Graylog,LibreNMS,Akavorado,IXPManager,Correlacion} "$WS/skills/"
-cp IXP/ai-agent/OpenClaw/tools/{read_api,graylog_query,librenms_query,akvorado_query,ixpmanager_query,correlate}.py "$WS/tools/"
-cp IXP/ai-agent/OpenClaw/IDENTITY.md IXP/ai-agent/OpenClaw/USER.md "$WS/"
+cp -r ai-agent/OpenClaw/Skills/{Graylog,LibreNMS,Akavorado,IXPManager,Correlacion} "$WS/skills/"
+cp ai-agent/OpenClaw/tools/{read_api,graylog_query,librenms_query,akvorado_query,ixpmanager_query,correlate}.py "$WS/tools/"
+cp ai-agent/OpenClaw/IDENTITY.md ai-agent/OpenClaw/USER.md "$WS/"
 ```
 
 No copiar el Skill `Gnmi` (deshabilitado), las pruebas ni `fixtures/`. Los comandos de los Skills se ejecutan desde la raíz del workspace (`python3 tools/...`).
