@@ -57,7 +57,7 @@ docker compose down
 
 ### Paso 2 — Crear estructura de pmacct
 
-Los archivos de despliegue están versionados en este directorio (`Pmacct/` de la rama `ixp`). Copiarlos al host desde la raíz del repositorio:
+Los archivos de despliegue están versionados en este directorio (`Pmacct/`). Copiarlos al host desde la raíz del repositorio:
 
 ```bash
 mkdir -p /opt/pmacct/data/{bmp-logs,ingester-state}

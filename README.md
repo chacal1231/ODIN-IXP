@@ -25,7 +25,7 @@ Las menciones a «producción» en las guías describen el despliegue declarado 
 
 ## Estructura
 
-Rama `ixp` del repositorio (el proyecto ISP vive en la rama `isp`):
+El proyecto ISP vive en su propio repositorio, [ODIN-ISP](https://github.com/chacal1231/ODIN-ISP).
 
 ```
 ./
@@ -54,8 +54,8 @@ Rama `ixp` del repositorio (el proyecto ISP vive en la rama `isp`):
 ## Inicio rápido
 
 ```bash
-git clone --branch ixp https://github.com/chacal1231/ODIN.git
-cd ODIN
+git clone https://github.com/chacal1231/ODIN-IXP.git
+cd ODIN-IXP
 ```
 
 Cada componente se despliega por separado en su host:
@@ -92,4 +92,4 @@ NetBox, Telegraf/InfluxDB/Grafana, Oxidized, BGPalerter, ExaBGP/GoBGP, SmokePing
 
 ## Licencia
 
-Uso interno TVYMAS. Repositorio privado.
+© TVYMAS. Sin licencia de uso publicada: el código es visible, pero no se concede permiso de reutilización.

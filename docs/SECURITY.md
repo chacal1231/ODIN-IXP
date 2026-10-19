@@ -5,16 +5,8 @@
 1. Revocar los tokens anteriores en Graylog y LibreNMS, emitir credenciales de consulta con mínimo privilegio y actualizar el entorno del proceso que ejecuta las herramientas.
 2. Revisar el `.env` de Graylog expuesto: cambiar el password admin, las credenciales reutilizadas y la comunidad SNMP si estaba en uso. Migrar a SNMPv3 cuando sea viable. Cambiar `GRAYLOG_PASSWORD_SECRET` requiere el procedimiento compatible con la versión de Graylog y un respaldo, porque cifra datos; no ejecutar setup para rotarlo.
 3. Revisar accesos y logs de autenticación de las plataformas. La revisión del repositorio no prueba ni descarta uso indebido.
-4. Historial reescrito: pedir a los colaboradores clones nuevos y revisar forks. No mezclar ni publicar ramas antiguas: un merge puede reintroducir el historial contaminado.
-5. Acceso residual en GitHub: el commit antiguo `<commit-retirado>` y `IXP/graylog/.env` (ruta en ese commit, antes de separar las ramas) bajo ese SHA seguían devolviendo HTTP 200 tras la reescritura. Si la rotación no mitiga el riesgo, solicitar la purga a GitHub Support siguiendo [el procedimiento oficial](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository). No incluir credenciales en el ticket.
-
-Borrador para GitHub Support (no enviado):
-
-> Asunto: Solicitud de purga de datos sensibles de historial reescrito — chacal1231/ODIN
->
-> Se reescribió main para retirar un archivo de entorno y credenciales literales del repositorio chacal1231/ODIN. El primer commit afectado es <commit-retirado>. La rama limpia se publicó con force-with-lease; el resultado del filtrado es <commit-retirado>. Gitleaks no detectó secretos en los 45 commits resultantes. No se anunciaron etiquetas ni referencias de pull requests, y git-filter-repo indicó que LFS no está en uso.
->
-> GitHub aún devuelve HTTP 200 para el commit original y para IXP/graylog/.env consultado por ese SHA. Se solicita evaluar la eliminación de vistas en caché, referencias internas y objetos antiguos que mantienen accesibles los datos sensibles. No se adjuntan secretos. La revocación de credenciales se gestiona por separado.
+4. Este repositorio se creó con un historial filtrado y sin datos de infraestructura real (IPs y hostnames sustituidos por rangos de documentación). No incorporar ramas ni commits del repositorio anterior: reintroducirían ese historial.
+5. Los detalles del incidente de credenciales y el seguimiento con GitHub Support se gestionan en el repositorio privado anterior, no aquí.
 
 ## Consultas del agente
 
