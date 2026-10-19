@@ -1,42 +1,35 @@
-# Guía de Instalación — OpenClaw con Docker + Telegram + Skills Personalizados
+# OpenClaw para IXP — instalación del agente y de los Skills
 
-> Seguridad: para los Skills de IXP, seguir [SECURITY.md](../../docs/SECURITY.md). Instalar `tools/` en la raíz del workspace y suministrar secretos por entorno. Las recetas curl de esta guía son ejemplos históricos; no usarlas para introducir credenciales ni texto del operador en shell. El cliente de consulta nuevo requiere HTTPS y Python 3.
+Guía para desplegar OpenClaw con Docker y Telegram, e instalar los Skills y clientes de consulta de IXP. Antes de empezar, leer [docs/SECURITY.md](../../docs/SECURITY.md).
 
-## Requisitos Previos
+## Requisitos previos
 
-- **Sistema operativo**: Ubuntu 22.04 / 24.04 (o cualquier Linux con Docker)
-- **RAM**: mínimo 2 GB (recomendado 4 GB)
-- **Disco**: 10 GB+ libres
-- **Docker y Docker Compose** instalados
-- **API Key de OpenAI** (u otro proveedor LLM)
-- **Cuenta de Telegram** para crear un bot
+- **Sistema operativo:** Ubuntu 22.04 / 24.04 (o cualquier Linux con Docker)
+- **RAM:** mínimo 2 GB para OpenClaw; el modelo local necesita aparte la memoria de su backend
+- **Disco:** 10 GB libres más el tamaño del modelo
+- **Docker y Docker Compose**
+- **Backend de modelo local** (Ollama u otro) con un modelo Qwen. Un proveedor cloud solo si se decide explícitamente; no es fallback obligatorio
+- **Cuenta de Telegram** para el bot
+- **Python 3** en el contexto de ejecución de herramientas de OpenClaw (los clientes no tienen otras dependencias)
 
 ---
 
-## 1. Instalar Docker (si no lo tienes)
+## 1. Instalar Docker (si no está instalado)
 
 ```bash
-# Actualizar paquetes
-sudo apt update && sudo apt upgrade -y
-
-# Instalar Docker
+sudo apt update && sudo apt upgrade -y      # actualiza todo el sistema
 curl -fsSL https://get.docker.com | sh
-
-# Agregar tu usuario al grupo docker
-sudo usermod -aG docker $USER
-
-# Verificar instalación
-docker --version
-docker compose version
+sudo usermod -aG docker $USER               # equivale a acceso root vía Docker
+docker --version && docker compose version
 ```
 
-> Cierra sesión y vuelve a entrar para que el grupo docker aplique.
+Cerrar sesión y volver a entrar para que aplique el grupo `docker`.
 
 ---
 
-## 2. Clonar el repositorio de OpenClaw
+## 2. Clonar OpenClaw en la versión fijada
 
-Versión fijada para IXP: **2026.8.35** (línea `extended-stable`, el equivalente a LTS de OpenClaw; publicada el 2026-10-02). Clonar ese tag, no `main`:
+Versión para IXP: **2026.8.35** (línea `extended-stable`, el equivalente a LTS de OpenClaw; publicada el 2026-10-02). Clonar ese tag, no `main`:
 
 ```bash
 cd /opt
@@ -46,83 +39,59 @@ cd openclaw
 
 ---
 
-## 3. Ejecutar el script de setup
+## 3. Setup
 
-### Opción A: Build local (recomendado)
-
-```bash
-./scripts/docker/setup.sh
-```
-
-Esto hace automáticamente:
-- Construye la imagen Docker desde el Dockerfile
-- Ejecuta el wizard de onboarding
-- Genera un token de gateway y lo escribe en `.env`
-- Inicia el gateway via Docker Compose
-
-### Opción B: Usar imagen pre-construida
+### Opción A: imagen pre-construida (recomendada)
 
 ```bash
 export OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:2026.8.35"
 ./scripts/docker/setup.sh
 ```
 
-Las imágenes pre-construidas están en GitHub Container Registry con tags: `main`, `latest`, `extended-stable` o versión específica (ej: `2026.8.35`). Para IXP usar siempre la versión fijada y no `main`, `latest` ni `extended-stable`: esos tags se mueven, y los Skills y el sandbox se validan contra una versión concreta. Tras el primer pull, registrar el digest (`docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/openclaw/openclaw:2026.8.35`) junto a la configuración saneada.
-
-Para subir de versión, preferir el siguiente parche de la línea `extended-stable` (por ejemplo 2026.9.33) con al menos dos semanas de publicación, y validarlo en laboratorio con los casos de prueba del plan antes de producción.
-
-### Opción C: Build manual paso a paso
+No usar los tags `main`, `latest` ni `extended-stable`: se mueven, y los Skills y el sandbox se validan contra una versión concreta. Tras el primer pull, registrar el digest junto a la configuración saneada:
 
 ```bash
-docker build -t openclaw:local -f Dockerfile .
-docker compose run --rm openclaw-cli onboard
-docker compose up -d openclaw-gateway
+docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/openclaw/openclaw:2026.8.35
 ```
 
----
+### Opción B: build local desde el tag clonado
 
-## 4. Wizard de Onboarding
+```bash
+./scripts/docker/setup.sh
+```
 
-El script lanza un wizard interactivo que te pedirá:
+El script construye la imagen, ejecuta el onboarding, genera un token de gateway en `.env` e inicia el gateway con Docker Compose.
 
-### 4.1 Proveedor de modelo (LLM)
+### Actualizar
 
-Selecciona tu proveedor y pega tu API Key:
-
-| Proveedor | Variable | Modelos recomendados |
-|---|---|---|
-| OpenAI | `OPENAI_API_KEY` | `gpt-4.1`, `gpt-4.1-mini` |
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`, `claude-opus-4-6` |
-| Ollama (local) | No requiere key | `llama3`, `mistral` |
-| Google | `GOOGLE_API_KEY` | `gemini-2.5-pro` |
-
-> **Recomendación**: Si usas OpenAI, usa `gpt-4.1` — tiene 1M de contexto, es más barato que gpt-4o y excelente para tool calling.
-
-### 4.2 Canal de comunicación
-
-El wizard pregunta por qué canal quieres comunicarte. Selecciona **Telegram**.
+Pasar al siguiente parche de la línea `extended-stable` (por ejemplo 2026.9.33) con al menos dos semanas de publicación, validarlo en laboratorio con los casos A–D y solo después cambiar `OPENCLAW_IMAGE` en producción.
 
 ---
 
-## 5. Configurar Telegram
+## 4. Onboarding
 
-### 5.1 Crear un bot en Telegram
+El wizard pide:
 
-1. Abre Telegram y busca `@BotFather`
-2. Envía `/newbot`
-3. Elige un nombre para tu bot (ej: "Mi Asistente AI")
-4. Elige un username que termine en `bot` (ej: `mi_asistente_ai_bot`)
-5. BotFather te dará un **token** — guárdalo
+- **Proveedor de modelo:** elegir el backend local (Ollama u otro). La configuración del modelo se detalla en la sección 6.
+- **Canal:** Telegram.
 
-### 5.2 Agregar el token a OpenClaw
+---
 
-Si ya pasaste el wizard, puedes agregar Telegram manualmente:
+## 5. Telegram
+
+### 5.1 Crear el bot
+
+1. En Telegram, abrir `@BotFather` y enviar `/newbot`.
+2. Elegir nombre y un username terminado en `bot`.
+3. Guardar el token en el gestor de secretos.
+
+### 5.2 Añadir el token
 
 ```bash
 docker compose run --rm openclaw-cli channels add --channel telegram --token "<TU_BOT_TOKEN>"
 ```
 
-O editar directamente `~/.openclaw/openclaw.json`:
+O en `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -137,268 +106,220 @@ O editar directamente `~/.openclaw/openclaw.json`:
 }
 ```
 
-### 5.3 Parear tu cuenta de Telegram
+No versionar `openclaw.json` con el token; para el repositorio, guardar una copia saneada.
 
-1. Busca tu bot en Telegram y envíale un mensaje
-2. El bot te responderá con un código de pairing
-3. Aprueba el pairing desde la terminal:
+### 5.3 Parear la cuenta
+
+1. Escribir al bot; responde con un código de pairing.
+2. Aprobarlo:
 
 ```bash
 docker compose run --rm openclaw-cli pairing approve telegram <CODIGO>
 ```
 
-Ahora tu bot debería responder mensajes desde Telegram.
+`dmPolicy: "pairing"` exige aprobación manual de cada cuenta.
 
 ---
 
-## 6. Verificar que funciona
+## 6. Modelo local (Qwen)
 
-### Acceder al Control UI
-
-Abre en tu navegador:
-
-```
-http://127.0.0.1:18789/
-```
-
-Pega el token de gateway (se generó durante el setup y está en `.env`).
-
-### Verificar salud del contenedor
-
-```bash
-# Liveness
-curl -fsS http://127.0.0.1:18789/healthz
-
-# Readiness
-curl -fsS http://127.0.0.1:18789/readyz
-
-# Ver logs
-docker compose logs -f openclaw-gateway
-```
-
----
-
-## 7. Configuración del Modelo
-
-Edita `~/.openclaw/openclaw.json` para cambiar el modelo:
+El modelo principal es un Qwen servido localmente. Configurarlo según la documentación de proveedores de la versión instalada (https://docs.openclaw.ai/gateway/local-models y https://docs.openclaw.ai/providers/ollama/setup); no copiar configuración de otra versión. Esquema orientativo en `~/.openclaw/openclaw.json`:
 
 ```json
 {
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openai/gpt-4.1"
+        "primary": "ollama/<MODELO_QWEN>"
       }
     }
   }
 }
 ```
 
-### Modelos recomendados por caso de uso
-
-| Caso de uso | Modelo | Contexto | Costo/1M input |
-|---|---|---|---|
-| General + Skills con tools | `openai/gpt-4.1` | 1M | $2.00 |
-| Económico con buen contexto | `openai/gpt-4.1-mini` | 1M | $0.40 |
-| Razonamiento complejo | `openai/gpt-5.4` | 1M | $2.50 |
-| Máximo ahorro | `openai/gpt-4o-mini` | 128K | $0.15 |
-
-> El gateway detecta cambios en el JSON automáticamente (hot reload), no siempre necesitas reiniciar.
+Documentar en el plan el modelo exacto, tamaño, cuantización, contexto y backend. Criterio de aceptación: al menos 9 de 10 llamadas correctas a herramientas en los casos A–D, y error explícito si el backend cae. El gateway recarga el JSON automáticamente en la mayoría de cambios.
 
 ---
 
-## 8. Crear Skills Personalizados
+## 7. Skills y clientes de IXP
 
-Los skills son archivos markdown que le enseñan al agente cómo usar herramientas. Se guardan en el workspace.
+### 7.1 Copiar al workspace
 
-### 8.1 Estructura de un skill
+Desde la raíz del repositorio ODIN:
 
-```
-~/.openclaw/workspace/skills/<nombre-del-skill>/SKILL.md
-```
-
-### 8.2 Formato del SKILL.md
-
-```markdown
----
-name: mi-skill
-description: Descripción clara de cuándo usar este skill. El agente usa esta descripción para decidir si activarlo.
----
-
-# Título del Skill
-
-## REGLA OBLIGATORIA
-Instrucciones claras y explícitas de lo que el agente DEBE hacer.
-
-## Comandos
-Bloques de código con los comandos exactos que el agente debe ejecutar.
-
-## Campos en los resultados
-Tabla o lista de los campos que devuelve la herramienta.
-
-## Cómo formatear la respuesta
-Instrucciones de cómo presentar los datos al usuario.
+```bash
+WS=~/.openclaw/workspace
+mkdir -p "$WS/skills" "$WS/tools"
+cp -r IXP/ai-agent/OpenClaw/Skills/{Graylog,LibreNMS,Akavorado,IXPManager,Correlacion} "$WS/skills/"
+cp IXP/ai-agent/OpenClaw/tools/{read_api,graylog_query,librenms_query,akvorado_query,ixpmanager_query,correlate}.py "$WS/tools/"
+cp IXP/ai-agent/OpenClaw/IDENTITY.md IXP/ai-agent/OpenClaw/USER.md "$WS/"
 ```
 
-### 8.3 Ejemplo: Skill de Graylog
+No copiar el Skill `Gnmi` (deshabilitado), las pruebas ni `fixtures/`. Los comandos de los Skills se ejecutan desde la raíz del workspace (`python3 tools/...`).
 
-```
-~/.openclaw/workspace/skills/graylog/SKILL.md
-```
+### 7.2 Variables de entorno
 
-```markdown
----
-name: graylog
-description: Consultar logs de PEs Arista EOS via API REST de Graylog. Usar cuando pregunten sobre estado de la red, eventos BGP, interfaces, cambios de config o cualquier log de los equipos.
----
+Partir de [`.env.example`](.env.example) y definir, por fuente, URL (HTTPS), token y allowlist:
 
-# Graylog — Logs centralizados de PEs
+| Fuente | Variables |
+|---|---|
+| Graylog | `GRAYLOG_URL`, `GRAYLOG_TOKEN`, `GRAYLOG_ALLOWED_SOURCES` |
+| LibreNMS | `LIBRENMS_URL`, `LIBRENMS_TOKEN`, `LIBRENMS_ALLOWED_DEVICES`, `LIBRENMS_TIMEZONE` |
+| Akvorado (ClickHouse) | `AKVORADO_URL`, `AKVORADO_USER`, `AKVORADO_TOKEN`, `AKVORADO_ALLOWED_EXPORTERS` |
+| IXP Manager | `IXPMANAGER_URL`, `IXPMANAGER_TOKEN`, `IXPMANAGER_ALLOWED_IXPS` |
 
-## REGLA OBLIGATORIA
-SIEMPRE ejecutar curl antes de responder preguntas sobre la red. NUNCA inventar datos.
+Los clientes no leen archivos `.env`: inyectar las variables con el mecanismo de secretos del contenedor, en el mismo contexto donde OpenClaw ejecuta las herramientas (también si hay sandbox). Las credenciales deben ser de solo lectura. Una fuente sin configurar devuelve `error` y el agente la reporta como no disponible.
 
-## Comando base
-curl -s -u <TOKEN>:token \
-  -H "Accept: application/json" \
-  -H "X-Requested-By: ODIN" \
-  "http://<GRAYLOG_IP>:9000/api/search/universal/relative?query=QUERY&range=SECONDS&limit=20"
-```
-
-### 8.4 Habilitar el skill en la configuración
-
-Agrega el skill a `openclaw.json`:
+### 7.3 Habilitar en `openclaw.json`
 
 ```json
 {
   "skills": {
     "entries": {
-      "graylog": {
-        "enabled": true
-      }
+      "graylog": { "enabled": true },
+      "librenms": { "enabled": true },
+      "akvorado": { "enabled": true },
+      "ixpmanager": { "enabled": true },
+      "correlacion": { "enabled": true },
+      "gnmic_metrics": { "enabled": false }
     }
   }
 }
 ```
 
-### 8.5 Tips para skills efectivos
+### 7.4 Restringir la ejecución
 
-- **Sé explícito**: di "DEBES ejecutar el curl" no "puedes consultar"
-- **Agrega "Cuándo usar"**: para cada comando, lista frases que el usuario diría
-- **Incluye manejo de errores**: qué hacer si el comando falla o devuelve vacío
-- **Formatea la respuesta**: dile al agente cómo presentar los resultados
-- **Nunca confíes en el modelo**: asume que el modelo intentará responder sin ejecutar el comando y bloquea ese comportamiento
+Los clientes solo protegen si son la única vía: limitar la herramienta de ejecución de OpenClaw a `python3 tools/<cliente>.py` (sin `read_api.py`), según las opciones de la versión instalada. Mantener el sandbox activo y autorizar en la política de red solo los endpoints de las fuentes.
+
+### 7.5 Verificar
+
+Desde la raíz del workspace, con las variables cargadas:
+
+```bash
+python3 tools/librenms_query.py devices --limit 5
+python3 tools/graylog_query.py --device <PE_AUTORIZADO> --seconds 300 --limit 5
+python3 tools/akvorado_query.py exporters
+python3 tools/ixpmanager_query.py members --limit 5
+```
+
+Cada comando imprime un único JSON; `status: error` indica configuración o conectividad pendiente. Después, preguntar al bot por una interfaz de un equipo autorizado y comprobar en la traza que ejecutó el cliente y citó fuente y hora.
+
+### 7.6 Escribir o modificar Skills
+
+Formato de `SKILL.md`:
+
+```markdown
+---
+name: mi-skill
+description: Cuándo usar este skill. El agente decide con esta descripción.
+---
+
+# Título
+
+REGLA: ejecutar el cliente ANTES de responder. Nunca inventar datos.
+
+## Comando
+python3 tools/<cliente>.py OPERACION [argumentos]
+
+## Resultados
+Cómo interpretar status, evidence y warnings.
+```
+
+Reglas para Skills de IXP: invocar solo clientes de `tools/` con argumentos estructurados; nunca curl, SQL o Lucene escritos por el modelo; ningún token, IP de servidor ni hostname de infraestructura en el Skill; explicar qué significan `empty`, `partial` y `error`.
 
 ---
 
-## 9. Estructura de directorios
+## 8. Estructura del workspace
 
 ```
 ~/.openclaw/
-├── openclaw.json          # Configuración principal
-├── .env                   # Variables de entorno (tokens, keys)
+├── openclaw.json          # Configuración principal (no versionar con secretos)
+├── .env                   # Token del gateway (generado por el setup)
 ├── workspace/
+│   ├── IDENTITY.md        # Instrucciones del agente ODIN
+│   ├── USER.md            # Perfil del usuario
 │   ├── skills/
-│   │   ├── graylog/
-│   │   │   └── SKILL.md
-│   │   └── otro-skill/
-│   │       └── SKILL.md
-│   ├── AGENTS.md          # Instrucciones del agente
-│   ├── SOUL.md            # Personalidad del agente
-│   └── USER.md            # Info sobre el usuario
-└── agents/
-    └── main/
-        └── sessions/      # Historial de sesiones
+│   │   ├── Graylog/SKILL.md
+│   │   ├── LibreNMS/SKILL.md
+│   │   ├── Akavorado/SKILL.md
+│   │   ├── IXPManager/SKILL.md
+│   │   └── Correlacion/SKILL.md
+│   └── tools/             # Clientes de consulta
+└── agents/main/sessions/  # Historial de sesiones
 ```
 
 ---
 
-## 10. Comandos útiles de Docker
+## 9. Comandos útiles
 
 ```bash
-# Ver estado
-docker compose ps
-
-# Ver logs en tiempo real
-docker compose logs -f openclaw-gateway
-
-# Reiniciar el gateway
-docker compose restart openclaw-gateway
-
-# Ejecutar comandos CLI
-docker compose run --rm openclaw-cli <comando>
-
-# Actualizar: cambiar OPENCLAW_IMAGE a la nueva versión fijada, validarla en laboratorio y luego
-docker compose pull && docker compose up -d
-
-# Detener todo
-docker compose down
-
-# Ver configuración actual
-docker compose run --rm openclaw-cli config get
-
-# Diagnóstico
-docker compose run --rm openclaw-cli doctor
+docker compose ps                                  # estado
+docker compose logs -f openclaw-gateway            # logs
+docker compose restart openclaw-gateway            # reiniciar
+docker compose run --rm openclaw-cli <comando>     # CLI
+docker compose run --rm openclaw-cli config get    # configuración actual
+docker compose run --rm openclaw-cli doctor        # diagnóstico
+docker compose down                                # detener
 ```
 
----
+Para actualizar, cambiar `OPENCLAW_IMAGE` a la nueva versión fijada, validarla en laboratorio y luego `docker compose pull && docker compose up -d`.
 
-## 11. ClawDock Helpers (opcional)
+### ClawDock helpers (opcional)
 
-Para comandos más cortos en el día a día:
+Descargar los helpers del mismo tag que la versión instalada, no de `main`, y revisarlos antes de cargarlos:
 
 ```bash
-mkdir -p ~/.clawdock && curl -sL \
-  https://raw.githubusercontent.com/openclaw/openclaw/main/scripts/shell-helpers/clawdock-helpers.sh \
-  -o ~/.clawdock/clawdock-helpers.sh
-
-echo 'source ~/.clawdock/clawdock-helpers.sh' >> ~/.bashrc && source ~/.bashrc
+mkdir -p ~/.clawdock
+curl -fsSL -o ~/.clawdock/clawdock-helpers.sh \
+  https://raw.githubusercontent.com/openclaw/openclaw/v2026.8.35/scripts/shell-helpers/clawdock-helpers.sh
+less ~/.clawdock/clawdock-helpers.sh
+echo 'source ~/.clawdock/clawdock-helpers.sh' >> ~/.bashrc
 ```
-
-Después puedes usar: `clawdock-start`, `clawdock-stop`, `clawdock-dashboard`, etc.
 
 ---
 
-## 12. Seguridad
+## 10. Seguridad
 
-- **Nunca expongas el gateway sin autenticación** a redes públicas
-- El token de gateway en `.env` protege el acceso al dashboard
-- Configura `dmPolicy: "pairing"` para Telegram (requiere aprobación manual)
-- Revisa la configuración de seguridad:
+- No exponer el gateway sin autenticación; el token de `.env` protege el Control UI (`http://127.0.0.1:18789/`).
+- Control UI y health checks (`/healthz`, `/readyz`) solo en localhost o por túnel.
+- En un VPS, firewall con origen restringido:
+
+```bash
+sudo ufw allow 22
+sudo ufw allow from <IP_ADMINISTRACION> to any port 18789 proto tcp
+sudo ufw enable
+```
+
+- Revisar la configuración:
 
 ```bash
 docker compose run --rm openclaw-cli security audit
 docker compose run --rm openclaw-cli doctor
 ```
 
-- Si estás en un VPS público, configura firewall:
-
-```bash
-# Solo permitir SSH y el puerto del gateway
-sudo ufw allow 22
-sudo ufw allow from <IP_ADMINISTRACION> to any port 18789 proto tcp
-sudo ufw enable
-```
-
 ---
 
-## 13. Troubleshooting
+## 11. Troubleshooting
 
 | Problema | Solución |
 |---|---|
-| Bot no responde en Telegram | Verificar `botToken`, reiniciar gateway, revisar logs |
-| "tools.profile (coding) allowlist contains unknown entries" | Normal con algunos modelos, no afecta funcionalidad |
-| Skill no ejecuta comandos | Cambiar a un modelo más capaz (gpt-4.1 mínimo) |
-| Error de red en skills con curl | Autorizar únicamente los endpoints necesarios en la política de red; conservar el sandbox activo |
-| Polling stall en Telegram | Se recupera automáticamente; si persiste, reiniciar gateway |
+| Bot no responde en Telegram | Verificar `botToken`, reiniciar el gateway y revisar logs |
 | Pairing no funciona | `docker compose run --rm openclaw-cli pairing list` para ver pendientes |
-| Alcanza límite de tokens rápido | Cambiar a modelo con más contexto (gpt-4.1 = 1M tokens) |
+| Polling stall en Telegram | Se recupera solo; si persiste, reiniciar el gateway |
+| «tools.profile (coding) allowlist contains unknown entries» | Aviso conocido con algunos modelos; no afecta |
+| El agente responde sin ejecutar el cliente | Revisar que el Skill esté habilitado y la descripción encaje con la pregunta; medir el modelo local con los casos A–D; si no llama herramientas de forma fiable, cambiar de modelo, no relajar las reglas |
+| Un cliente devuelve `invalid_configuration_or_filter` | Falta una variable, la URL no es HTTPS o el equipo no está en la allowlist |
+| Un cliente devuelve `connection_or_timeout` | Política de red del sandbox o firewall: autorizar solo ese endpoint; mantener el sandbox activo |
+| Un cliente devuelve `invalid_response` | El formato de la fuente no coincide con el contrato; revisar con el plan antes de ajustar el cliente |
+| Se agota el contexto | Reducir `--limit` y la ventana de consulta; usar `correlate.py` en lugar de varias consultas sueltas |
 
 ---
 
 ## Referencias
 
 - Documentación oficial: https://docs.openclaw.ai
-- Docker setup: https://docs.openclaw.ai/install/docker
+- Docker: https://docs.openclaw.ai/install/docker
 - Configuración: https://docs.openclaw.ai/gateway/configuration
-- Telegram: https://github.com/openclaw/openclaw/blob/main/docs/channels/telegram.md
+- Modelos locales: https://docs.openclaw.ai/gateway/local-models
+- Skills: https://docs.openclaw.ai/tools/skills
 - GitHub: https://github.com/openclaw/openclaw

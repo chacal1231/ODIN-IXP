@@ -1,201 +1,116 @@
-# Syslog — Graylog 6.1
+# Graylog — logs de los PEs
 
-> Centralización de logs de todos los PEs Arista EOS.
+> Centralización del syslog de los PEs Arista EOS. Fuente de los eventos que consulta el agente con `tools/graylog_query.py`.
 
 ## Stack
 
 | Componente | Versión | Función |
 |---|---|---|
-| Graylog | 6.1 | Collector, procesamiento, UI, API |
+| Graylog | 6.1 | Recepción, procesamiento, UI y API |
 | OpenSearch | 2.15.0 | Indexado y almacenamiento de logs |
-| MongoDB | 7.0 | Almacenamiento de configuración de Graylog |
+| MongoDB | 7.0 | Configuración de Graylog |
 
 ## Despliegue
 
-```bash
-cd syslog/
-cp .env.example .env
-# Editar .env con tus valores
+Desde este directorio (`IXP/graylog/`), en el host Linux de Graylog:
 
-bash scripts/02-setup-graylog.sh   # Genera secrets y configura kernel
+```bash
+sudo bash 01-install-docker.sh      # solo si Docker no está instalado; actualiza el sistema y añade el usuario al grupo docker
+cp .env.example .env                # solo en instalación nueva
+bash 02-setup-graylog.sh            # solo en instalación nueva: genera secretos sin imprimirlos y fija vm.max_map_count
 docker compose up -d
-docker compose ps                  # Verificar que todo está healthy
+docker compose ps                   # todos los servicios healthy
 ```
+
+En una instalación existente no ejecutar el setup para «regenerar» nada: `GRAYLOG_PASSWORD_SECRET` cifra datos y debe conservarse. Ver [docs/SECURITY.md](../docs/SECURITY.md#despliegue-graylog).
+
+Después, configurar inputs, PEs, extractors, streams y alertas según [03-configuracion-PEs.md](03-configuracion-PEs.md).
 
 ## Acceso
 
-- **Web UI:** http://odin.example.net:9000
-- **API REST:** http://odin.example.net:9000/api/
-- **Usuario:** admin
-- **Password:** (configurado durante setup)
-
-## Inputs configurados
-
-| Input | Puerto | Protocolo | Estado |
-|---|---|---|---|
-| Syslog TCP - PEs | 1514 | TCP | ✅ Activo |
-| Syslog UDP - PEs | 1514 | UDP | ✅ Activo |
-
-### Parámetros recomendados para los inputs
-
-- `recv_buffer_size`: 1048576 (1MB) — especialmente en UDP
-- `store_full_message`: true
-- `number_worker_threads`: 8
-
-## Configuración de PEs Arista EOS
-
-### Configuración en producción (TVYMAS)
-
-```
-configure terminal
-logging buffered 1000000
-logging host 198.51.100.43 1514 protocol tcp
-logging format timestamp high-resolution
-logging format hostname fqdn
-logging format sequence-numbers
-logging facility local7
-logging source-interface Vlan1545
-end
-write memory
-```
-
-| Parámetro | Valor | Descripción |
+| Servicio | Dirección | Notas |
 |---|---|---|
-| `logging buffered 1000000` | 1M líneas | Buffer local en caso de pérdida de conexión al servidor |
-| `logging host` | 198.51.100.43:1514 TCP | IP de odin.example.net, puerto 1514, protocolo TCP |
-| `logging format timestamp high-resolution` | — | Timestamps con precisión de microsegundos |
-| `logging format hostname fqdn` | — | Incluye hostname completo en cada mensaje |
-| `logging format sequence-numbers` | — | Numera los mensajes para detectar pérdidas |
-| `logging facility local7` | local7 | Facility dedicada para identificar en Graylog |
-| `logging source-interface Vlan1545` | Vlan1545 | Interfaz de management como origen del syslog |
+| Web UI y API | `127.0.0.1:9000` en el host | Acceder por túnel SSH o proxy TLS autenticado. `GRAYLOG_HTTP_BIND` permite enlazar otra dirección de gestión, restringida por firewall |
+| Syslog TCP/UDP | `:1514` | Restringir orígenes a los PEs autorizados |
+| Beats / GELF | `:5044`, `:12201` | Opcionales; cerrarlos en el firewall si no se usan |
+| OpenSearch | Solo red interna de Compose | Sin autenticación: no publicar |
 
-### Verificación desde el PE
+Usuario `admin`; password definido en el setup (solo se guarda su hash). Para el agente, crear un usuario de solo lectura con token propio.
 
-```
-show logging
-send log level informational message "Test syslog hacia Graylog desde PE-XX"
-ping 198.51.100.43
-```
+## Retención
 
-## Extractors
+- Rotación: un índice por día.
+- Retención: 90 índices (`GRAYLOG_ELASTICSEARCH_MAX_NUMBER_OF_INDICES` en `docker-compose.yml`).
+- Journal: hasta 10 GB en disco si OpenSearch no está disponible.
 
-Los extractors parsean los campos de los mensajes Arista automáticamente.
+## Campos que usa el agente
 
-**Importar:** System → Inputs → [tu input] → Manage extractors → Actions → Import extractors
-
-Archivo: `extractors/arista-eos-extractors.json`
-
-### Campos extraídos
+`graylog_query.py` filtra y devuelve estos campos. Deben existir con estos nombres, creados por los extractors (ver la [guía de configuración](03-configuracion-PEs.md#4-extractors)):
 
 | Campo | Ejemplo | Descripción |
 |---|---|---|
 | `arista_event` | BGP-5-ADJCHANGE | Evento completo (facility-severity-mnemonic) |
-| `arista_facility` | BGP | Protocolo/subsistema de Arista |
-| `arista_severity` | 5 | Nivel de severidad (0=emergencia, 7=debug) |
-| `arista_mnemonic` | ADJCHANGE | Tipo específico de evento |
-| `bgp_neighbor_ip` | 203.0.113.74 | IP del peer BGP afectado |
-| `bgp_vrf` | default | VRF de la sesión BGP |
-| `bgp_remote_asn` | 64512 | ASN del vecino BGP |
-| `bgp_state` | Established | Estado de la sesión BGP |
-| `interface_name` | Ethernet1/1 | Nombre de interfaz afectada |
+| `arista_facility` | BGP | Subsistema |
+| `arista_severity` | 5 | Severidad (0 = emergencia … 7 = debug) |
+| `arista_mnemonic` | ADJCHANGE | Tipo de evento |
+| `bgp_neighbor_ip` | 192.0.2.1 | Peer BGP |
+| `bgp_vrf` | default | VRF de la sesión |
+| `bgp_remote_asn` | 65001 | ASN del peer |
+| `bgp_state` | Established | Estado de la sesión |
+| `interface_name` | Ethernet1/1 | Interfaz |
 | `interface_state` | down | Estado de la interfaz |
-| `config_user` | admin | Usuario que hizo un cambio de config |
-| `igp_neighbor_ip` | 10.0.0.1 | IP del vecino OSPF/ISIS |
+| `config_user` | admin | Usuario de un cambio de configuración |
+| `igp_neighbor_ip` | 10.0.0.1 | Vecino OSPF/IS-IS |
 
-## Streams
+El campo `source` debe coincidir exactamente con los nombres de `GRAYLOG_ALLOWED_SOURCES` del agente.
 
-| Stream | Regla | Propósito |
-|---|---|---|
-| BGP Events | `arista_facility:BGP` | Todos los eventos de BGP |
-| Interface Events | `message contains "changed state"` | Cambios de estado de interfaces |
-| Config Changes | `message contains "configured"` | Cambios de configuración |
-| Critical Alerts | `arista_severity < 4` | Emergencias, alertas, críticos, errores |
-| ODIN Actions | `source:odin` | Acciones del agente AI (futuro) |
+## API
 
-## Alertas
-
-### BGP Session Down
-- **Stream:** BGP Events
-- **Condición:** Mensaje contiene "Idle" o "Active" en los últimos 60 segundos
-- **Notificación:** Telegram
-- **Prioridad:** CRÍTICA
-
-### Interface Down
-- **Stream:** Interface Events
-- **Condición:** `interface_state:down` en los últimos 60 segundos
-- **Notificación:** Telegram
-- **Prioridad:** ALTA
-
-### Config Change
-- **Stream:** Config Changes
-- **Condición:** Cualquier mensaje nuevo
-- **Notificación:** Telegram
-- **Prioridad:** INFORMATIVA
-
-### High Error Rate
-- **Stream:** Critical Alerts
-- **Condición:** Más de 50 mensajes en 5 minutos
-- **Notificación:** Telegram
-- **Prioridad:** CRÍTICA
-
-## Retención de datos
-
-- **Rotación:** 1 índice por día
-- **Retención:** 90 días (configurable en `GRAYLOG_ELASTICSEARCH_MAX_NUMBER_OF_INDICES`)
-- **Journal:** 10 GB máximo (buffer en disco si OpenSearch no está disponible)
-
-## API REST — Ejemplos útiles
+El agente usa `tools/graylog_query.py` (ver el [Skill](../ai-agent/OpenClaw/Skills/Graylog/SKILL.md)). Para comprobaciones manuales desde el host, con un archivo netrc externo (`GRAYLOG_NETRC_FILE`, permisos 600, cuenta de consulta):
 
 ```bash
 # Total de mensajes
-curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" http://localhost:9000/api/count/total
-
-# Buscar logs de un PE específico
 curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" \
-  "http://localhost:9000/api/search/universal/relative?query=source:PE-ODATA01&range=3600"
+  http://127.0.0.1:9000/api/count/total
 
-# Buscar eventos BGP
+# Logs de un PE en la última hora
 curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" \
-  "http://localhost:9000/api/search/universal/relative?query=arista_facility:BGP&range=86400"
-
-# Buscar por neighbor IP
-curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --netrc-file "$GRAYLOG_NETRC_FILE" \
-  "http://localhost:9000/api/search/universal/relative?query=bgp_neighbor_ip:203.0.113.74&range=86400"
+  -H "Accept: application/json" \
+  "http://127.0.0.1:9000/api/search/universal/relative?query=source:PE-ODATA01&range=3600&limit=20"
 ```
+
+No poner tokens ni passwords en la línea de comandos.
 
 ## Troubleshooting
 
 ### No llegan logs
-1. Verificar conectividad: `ping` desde el PE al servidor
-2. Verificar puerto: `ss -tlnp | grep 1514`
-3. Verificar Docker: `docker compose logs graylog | grep -i error`
-4. Verificar input: Graylog UI → System → Inputs → verificar estado "RUNNING"
+1. Conectividad desde el PE al servidor (`ping` por la VRF de gestión).
+2. Puerto: `ss -tlnp | grep 1514` y `ss -ulnp | grep 1514`.
+3. Errores: `docker compose logs graylog | grep -i error`.
+4. Input en estado RUNNING: System → Inputs.
+5. Firewall del host: el origen del PE debe estar permitido.
 
 ### OpenSearch no arranca
-1. Verificar `vm.max_map_count`: `sysctl vm.max_map_count` (debe ser 262144)
-2. Verificar RAM: `docker stats graylog-opensearch`
-3. Verificar logs: `docker compose logs opensearch`
+1. `sysctl vm.max_map_count` debe ser 262144 (el setup lo deja en `/etc/sysctl.d/99-opensearch.conf`).
+2. Memoria: `docker stats graylog-opensearch`.
+3. `docker compose logs opensearch`.
 
-### Graylog muestra "Journal utilization is too high"
-El journal está lleno porque OpenSearch no puede procesar los mensajes tan rápido.
-1. Verificar salud de OpenSearch: `curl http://localhost:9200/_cluster/health`
-2. Aumentar `GRAYLOG_PROCESSBUFFER_PROCESSORS` si hay CPU disponible
-3. Si persiste, aumentar el heap de OpenSearch
+### «Journal utilization is too high»
+OpenSearch no procesa al ritmo de entrada.
+1. Salud: `docker compose exec opensearch curl -s http://localhost:9200/_cluster/health`.
+2. Aumentar `GRAYLOG_PROCESSBUFFER_PROCESSORS` si hay CPU disponible.
+3. Si persiste, aumentar el heap de OpenSearch (`OPENSEARCH_JAVA_OPTS`).
 
 ## Archivos
 
 ```
-syslog/
-├── README.md                     ← Este archivo
-├── docker-compose.yml            ← Stack Graylog + OpenSearch + MongoDB
-├── .env.example                  ← Plantilla de variables de entorno
-├── extractors/
-│   └── arista-eos-extractors.json ← Extractors para Arista EOS
-├── configs/
-│   ├── arista-eos-syslog.conf    ← Config de syslog para Arista
-│   ├── cisco-iosxr-syslog.conf   ← Config de syslog para Cisco IOS-XR
-│   └── juniper-junos-syslog.conf ← Config de syslog para Juniper
-└── scripts/
-    ├── 01-install-docker.sh      ← Instalación de Docker
-    └── 02-setup-graylog.sh       ← Setup inicial de Graylog
+IXP/graylog/
+├── README.md                  ← Este archivo
+├── 03-configuracion-PEs.md    ← Inputs, PEs, extractors, streams, alertas y verificación
+├── docker-compose.yml         ← Graylog + OpenSearch + MongoDB
+├── .env.example               ← Plantilla sin valores (.env no se versiona)
+├── 01-install-docker.sh       ← Instalación de Docker
+└── 02-setup-graylog.sh        ← Setup inicial (solo instalación nueva)
 ```
+
+Los extractors, streams y alertas se configuran en la UI y no están versionados. Exportar los extractors (Manage extractors → Actions → Export) y guardarlos aquí como `extractors/arista-eos-extractors.json` cuando estén estables.

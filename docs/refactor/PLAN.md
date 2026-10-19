@@ -41,9 +41,8 @@ Para Graylog y el modelo local: probar primero en un workspace aislado. Pregunta
 
 ## Documentación y operación
 
-- Guía única de instalación de los clientes en OpenClaw: archivos, variables, sandbox y verificación.
-- README principal de IXP: estructura inexistente (`syslog/`, `monitoring/`, …), clonado de otro remoto y estados desactualizados.
-- Graylog: el README usa rutas `syslog/` y un archivo de extractors que no está en el repositorio.
+- Graylog: probar las expresiones de los extractors con mensajes reales y versionar su exportación en `graylog/extractors/`.
+- OpenClaw: confirmar en la documentación de 2026.8.35 la sintaxis del modelo local y la forma de restringir la herramienta de ejecución, y ajustar el README.
 - Decidir si se sustituyen por marcadores las IPs y hostnames reales de la documentación de despliegue.
 - Runbooks por fuente caída, rollback por componente y métricas de salud del agente.
 - Oxidized y Zabbix solo con necesidad demostrada.

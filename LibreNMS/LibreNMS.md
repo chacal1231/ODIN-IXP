@@ -8,11 +8,13 @@
 
 | Componente | Versión | Función |
 |---|---|---|
-| LibreNMS | Latest | Monitoreo SNMP, autodiscovery, alertas |
+| LibreNMS | 26.9.1.1 (imagen `librenms/librenms`, fijada) | Monitoreo SNMP, autodiscovery, alertas |
 | MariaDB | 10.11 | Base de datos |
 | Redis | 7 | Cache y colas |
-| Memcached | Latest | Cache de polling |
-| RRDcached | Latest | Cache de gráficas RRD |
+| Memcached | La del ejemplo oficial | Cache de polling |
+| RRDcached | La del ejemplo oficial | Cache de gráficas RRD |
+
+Versiones de servicios auxiliares: las que fija el ejemplo de Compose del tag `26.9.1.1-r1` de `librenms/docker`. Si alguna usa `latest`, fijarla igual que LibreNMS.
 
 ## Requisitos previos
 
@@ -23,16 +25,25 @@
 
 ---
 
-## Paso 1 — Descargar los archivos oficiales
+## Paso 1 — Descargar los archivos oficiales de una versión fijada
 
 ```bash
+VERSION=26.9.1.1-r1
 mkdir -p /opt/librenms
 cd /opt/librenms
-wget https://github.com/librenms/docker/archive/refs/heads/master.zip
-unzip master.zip
-cp docker-master/examples/compose/* .
-rm -rf docker-master master.zip
+wget "https://github.com/librenms/docker/archive/refs/tags/${VERSION}.zip"
+unzip "${VERSION}.zip"
+cp "docker-${VERSION}"/examples/compose/* .
+rm -rf "docker-${VERSION}" "${VERSION}.zip"
 ```
+
+En `compose.yml`, fijar la imagen de LibreNMS (y la del dispatcher y demás servicios `librenms/librenms`) a la versión, en lugar de `latest`:
+
+```yaml
+image: librenms/librenms:26.9.1.1
+```
+
+Para actualizar: cambiar `VERSION` y la imagen a una versión publicada hace al menos dos semanas, revisar las notas de versión y validar en laboratorio.
 
 ## Paso 2 — Configurar variables de entorno
 
@@ -186,15 +197,20 @@ docker compose exec --user librenms librenms php /opt/librenms/poller.php -h 192
 ### Habilitar la API
 
 1. Settings (engranaje) → API → API Settings → Enable API → Activar → Save
-2. Settings → API → API Keys → Create API access token
-3. Seleccionar usuario admin, descripción: `ODIN`
-4. Guardar el token generado
+2. Crear un usuario de solo lectura para el agente (nivel *Global Read*), no usar `admin`.
+3. Settings → API → API Keys → Create API access token, para ese usuario, descripción: `ODIN`.
+4. Guardar el token en el gestor de secretos y entregarlo al agente como `LIBRENMS_TOKEN`; no escribirlo en Skills, prompts ni archivos versionados.
 
 ### Verificar que funciona
 
+Con el token en un archivo de cabecera externo (permisos 600, una línea `X-Auth-Token: <token>`), para que no quede en el historial ni en la lista de procesos:
+
 ```bash
-curl -s -H "X-Auth-Token: TU_TOKEN" "http://odin.example.net:9001/api/v0/devices" | python3 -m json.tool | head -20
+curl --fail --silent --show-error --max-time 20 -H @"$LIBRENMS_HEADER_FILE" \
+  "http://127.0.0.1:9001/api/v0/devices" | python3 -m json.tool | head -20
 ```
+
+El agente exige HTTPS: publicar la API detrás de un proxy TLS para `LIBRENMS_URL`.
 
 ### Endpoints principales
 
@@ -215,8 +231,10 @@ curl -s -H "X-Auth-Token: TU_TOKEN" "http://odin.example.net:9001/api/v0/devices
 | `/api/v0/devices/{IP}/health` | Sensores (CPU, temp, voltaje) |
 | `/api/v0/devices/{IP}/health/device_temperature` | Temperatura |
 | `/api/v0/devices/{IP}/health/device_dbm` | Ópticas Tx/Rx |
-| `/api/v0/logs/eventlog` | Eventos del sistema |
+| `/api/v0/logs/eventlog/{IP}` | Eventos de un equipo |
 | `/api/v0/system` | Estado de LibreNMS |
+
+Estos son los endpoints que usa `librenms_query.py`. Su formato de respuesta aún debe confirmarse contra esta versión (ver [plan](../docs/refactor/PLAN.md)).
 
 ### Unidades de tráfico en la API
 
@@ -255,15 +273,17 @@ Para agregar widgets: dentro del dashboard click **"+"** → seleccionar widget 
 
 ## Integración con ODIN
 
-LibreNMS tiene un skill configurado en OpenClaw que permite al agente AI consultar:
+El agente consulta LibreNMS con `tools/librenms_query.py` siguiendo el [Skill LibreNMS](../ai-agent/OpenClaw/Skills/LibreNMS/SKILL.md):
 
-- Estado de equipos (up/down)
-- Interfaces y tráfico
+- Resolución de nombre amigable a hostname (`resolve`)
+- Equipos up/down, interfaces y tráfico
 - Sesiones BGP y sus estados
-- Alertas activas
-- Sensores de hardware (temperatura, ópticas, voltaje)
+- Alertas activas y eventlog
+- Sensores, y ópticas con márgenes en dB ordenadas por riesgo (`optics`)
 
-Archivo del skill: `/root/.openclaw/workspace/skills/librenms/SKILL.md`
+Configuración en el entorno del agente: `LIBRENMS_URL` (HTTPS), `LIBRENMS_TOKEN`, `LIBRENMS_ALLOWED_DEVICES` (hostnames, es decir, IPs de gestión) y `LIBRENMS_TIMEZONE=-05:00` (zona horaria del servidor, `TZ=America/Bogota`). Instalación en el [README de OpenClaw](../ai-agent/OpenClaw/README.md).
+
+Para las ópticas, conviene que las descripciones de los sensores incluyan `Rx`/`Tx` y que los límites sean los del transceptor; el agente marca los límites como no verificados porque LibreNMS puede asignarlos por defecto.
 
 ### Correlación con Graylog
 
@@ -300,11 +320,14 @@ Si falla:
 
 ### Device aparece con IP en vez de hostname
 
-LibreNMS registra por IP de management. Para renombrar:
+LibreNMS registra por IP de management. Para renombrar (requiere un token con permisos de escritura, distinto del del agente):
 
 ```bash
-curl -X PATCH -H "X-Auth-Token: TU_TOKEN" "http://odin.example.net:9001/api/v0/devices/192.0.2.2/rename/pe-odata01"
+curl --fail --silent --show-error -X PATCH -H @"$LIBRENMS_ADMIN_HEADER_FILE" \
+  "http://127.0.0.1:9001/api/v0/devices/192.0.2.2/rename/pe-odata01"
 ```
+
+Renombrar cambia `hostname`: actualizar `LIBRENMS_ALLOWED_DEVICES` del agente.
 
 ### Poller no corre
 
@@ -356,6 +379,6 @@ docker compose exec --user librenms librenms lnms poller:status
 
 ## Acceso
 
-- **Web UI:** http://odin.example.net:9001
-- **API:** http://odin.example.net:9001/api/v0/
+- **Web UI:** http://odin.example.net:9001 (restringir por firewall a la red de gestión)
+- **API:** http://odin.example.net:9001/api/v0/; para el agente, la misma API detrás de un proxy TLS
 - **Puerto SNMP:** 161/UDP (desde LibreNMS hacia los PEs)

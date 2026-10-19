@@ -3,7 +3,7 @@
 # Graylog 6.1 + OpenSearch 2.15 + MongoDB 7.0
 #
 # Puertos expuestos:
-#   9000  - Web UI + API REST (TCP)
+#   9000  - Web UI + API REST (TCP), en 127.0.0.1 salvo GRAYLOG_HTTP_BIND
 #   1514  - Syslog TCP (desde los PEs)
 #   1514  - Syslog UDP (desde los PEs)
 #   5044  - Beats input (opcional, para agentes)

@@ -7,7 +7,7 @@ description: Consultar métricas gNMIc vía /metrics. Usar para contadores de tr
 
 ## ESTADO: ejecución autónoma deshabilitada
 
-No ejecutar curl/grep contra el endpoint de métricas desde el agente. Este Skill queda como referencia de métricas y labels hasta que exista un cliente acotado (fase P3 de `docs/refactor/PLAN.md`). Si preguntan por estas métricas, responder que la fuente gNMI no está habilitada para consultas del agente. Nunca interpolar texto del operador en grep ni en shell.
+No ejecutar curl/grep contra el endpoint de métricas desde el agente. Este Skill queda como referencia de métricas y labels hasta que exista un cliente acotado (pendiente en `docs/refactor/PLAN.md`). Si preguntan por estas métricas, responder que la fuente gNMI no está habilitada para consultas del agente. Nunca interpolar texto del operador en grep ni en shell.
 
 Endpoint Prometheus text format: configurado por el administrador fuera del Skill; no incluir IPs ni hostnames aquí.
 

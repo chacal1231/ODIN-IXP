@@ -5,111 +5,80 @@
 # ODIN — Omniscient Digital Infrastructure Nexus
 > *"Un ojo en cada ruta, un cuervo en cada nodo"*
 
-**ODIN** es la plataforma de observabilidad, automatización y AI para la infraestructura de red de **TVYMAS**. Integra monitoreo, logging, telemetría, análisis de tráfico, gestión de configuraciones y un agente de inteligencia artificial que diagnostica, correlaciona y toma acciones sobre la red.
+**ODIN** es la plataforma de observabilidad y el agente de IA de la red de **TVYMAS**. Reúne logs, estado SNMP, tráfico, eventos BGP e inventario del IXP, y un agente (OpenClaw) que consulta esas fuentes en modo solo lectura para diagnosticar y correlacionar incidentes.
 
----
+El agente presenta hallazgos con fuente y hora, separa hipótesis de hechos e indica qué fuentes faltan. No ejecuta cambios en la red.
 
-## Visión general
+## Componentes
 
-ODIN nace de la necesidad de tener un NOC inteligente que no dependa de operadores 24/7 para detectar y reaccionar ante problemas en la red. El sistema observa cada PE, cada ruta BGP, cada flujo de tráfico y cada log — y cuando algo se sale de lo normal, ODIN lo detecta, diagnostica la causa raíz y recomienda (o ejecuta) la acción correctiva.
-
-## Stack tecnológico
-
-| Componente | Herramienta | Función | Estado |
+| Componente | Herramienta | Función | En este repositorio |
 |---|---|---|---|
-| Logs centralizados | Graylog 6.1 + OpenSearch 2.15 | Syslog de todos los PEs | ✅ Producción |
-| Análisis de tráfico | Akvorado + ClickHouse | NetFlow/sFlow, volumen por ASN | ✅ Producción |
-| Source of truth | NetBox | Inventario, IPAM, circuitos | ⬜ Pendiente |
-| Monitoreo SNMP | LibreNMS | Estado de PEs, interfaces, BGP | ⬜ Pendiente |
-| Telemetría streaming | Telegraf + InfluxDB + Grafana | gNMI/OpenConfig, métricas RT | ⬜ Pendiente |
-| Backup de configs | Oxidized | Histórico Git de configs | ⬜ Pendiente |
-| Rutas BGP internas | OpenBMP | Tabla BGP en tiempo real | ⬜ Pendiente |
-| Monitoreo BGP externo | BGPalerter | Hijacks, leaks, RPKI | ⬜ Pendiente |
-| BGP programático | ExaBGP/GoBGP | Inyección/retiro de rutas | ⬜ Pendiente |
-| Medición de latencia | SmokePing + RIPE Atlas | Latencia, jitter, packet loss | ⬜ Pendiente |
-| QoE por servicio | Akvorado + Telegraf probes | Calidad hacia Netflix, gaming | ⬜ Pendiente |
-| Agente AI | OpenClaw + NetClaw (ODIN) | Diagnóstico y acciones automáticas | ⬜ Pendiente |
+| Logs | Graylog 6.1 + OpenSearch 2.15 + MongoDB 7.0 | Syslog de los PEs | [graylog/](graylog/): Compose, setup, guía de PEs |
+| Estado SNMP | LibreNMS | Equipos, interfaces, BGP, alertas, sensores | [LibreNMS/](LibreNMS/LibreNMS.md): guía de despliegue |
+| Tráfico | Akvorado + ClickHouse | Flujos por ASN, PE, interfaz, IP | Solo el cliente del agente (despliegue externo) |
+| Eventos BGP | pmacct (pmbmpd) + ClickHouse | BMP: updates, withdrawals, peer up/down | [Pmacct/](Pmacct/README.md): Compose, ingester, logrotate |
+| Inventario IXP | IXP Manager | Miembros, ASN, puertos, IPs del peering LAN | Solo el cliente del agente (despliegue externo) |
+| Telemetría | gNMIc | Contadores de interfaces y BGP | Skill deshabilitado; sin cliente |
+| Agente IA | OpenClaw 2026.8.35 | Skills y clientes de consulta | [ai-agent/OpenClaw/](ai-agent/OpenClaw/README.md) |
 
-## Infraestructura
+Las menciones a «producción» en las guías describen el despliegue declarado por el equipo; la verificación de extremo a extremo con el agente está pendiente (ver [plan](docs/refactor/PLAN.md)).
 
-- **Servidor principal:** `odin.example.net`
-- **OS:** Ubuntu 22.04/24.04 LTS
-- **RAM:** 32 GB
-- **Orquestación:** Docker Compose
-- **Vendor de PEs:** Arista EOS
-- **Conectividad:** Red de management dedicada
-
-## Estructura del repositorio
+## Estructura
 
 ```
-odin/
-├── README.md                    ← Este archivo
+IXP/
+├── README.md                  ← Este archivo
 ├── docs/
-│   ├── architecture.md          ← Arquitectura general y flujos
-│   ├── roadmap.md               ← Plan de implementación por fases
-│   └── security.md              ← Consideraciones de seguridad
-├── syslog/
-│   ├── README.md                ← Guía de Graylog
-│   ├── docker-compose.yml       ← Stack Graylog + OpenSearch + MongoDB
-│   ├── .env                     ← Variables de entorno
-│   ├── extractors/              ← JSONs de extractors por vendor
-│   └── configs/                 ← Configuraciones de syslog por vendor
-├── monitoring/
-│   ├── librenms/                ← LibreNMS (SNMP)
-│   ├── telegraf-influxdb-grafana/ ← Stack TIG (telemetría)
-│   ├── smokeping/               ← Medición de latencia
-│   └── ripe-atlas/              ← Sondas y mediciones RIPE Atlas
-├── netbox/
-│   └── README.md                ← NetBox como source of truth
-├── bgp/
-│   ├── openbmp/                 ← Monitoreo interno de rutas
-│   ├── bgpalerter/              ← Monitoreo externo (hijacks/leaks)
-│   └── exabgp/                  ← Speaker BGP programático
-├── backup/
-│   └── oxidized/                ← Backup de configuraciones
-├── telemetry/
-│   └── README.md                ← gNMI + OpenConfig
-├── qoe/
-│   ├── akvorado/                ← Análisis de tráfico por servicio
-│   └── README.md                ← Monitoreo de QoE
-├── ai-agent/
-│   ├── openclaw/                ← Configuración de OpenClaw
-│   ├── skills/                  ← Skills personalizados de ODIN
-│   └── mcp-servers/             ← Servidores MCP para cada componente
-├── addressing/
-│   └── README.md                ← Esquema de direccionamiento IPv4/IPv6
-└── scripts/
-    └── README.md                ← Scripts de utilidad y mantenimiento
+│   ├── SECURITY.md            ← Acciones pendientes, configuración segura del agente, despliegue Graylog
+│   ├── architecture/
+│   │   ├── CURRENT_STATE.md   ← Inventario actual y hallazgos abiertos
+│   │   └── TARGET_STATE.md    ← Arquitectura objetivo
+│   └── refactor/
+│       └── PLAN.md            ← Trabajo pendiente
+├── graylog/                   ← Stack Graylog (Compose, scripts, guías)
+├── LibreNMS/                  ← Guía de LibreNMS
+├── Pmacct/                    ← Colector BMP e ingester a ClickHouse
+└── ai-agent/
+    └── OpenClaw/
+        ├── README.md          ← Instalación de OpenClaw y de los Skills de IXP
+        ├── IDENTITY.md        ← Instrucciones del agente
+        ├── USER.md            ← Perfil del usuario
+        ├── .env.example       ← Variables de los clientes
+        ├── Skills/            ← Graylog, LibreNMS, Akavorado, IXPManager, Correlacion, Gnmi
+        └── tools/             ← Clientes de consulta en Python y sus pruebas
 ```
 
 ## Inicio rápido
 
 ```bash
-# 1. Clonar el repositorio
-git clone git@github.com:tvymas/odin.git
-cd odin
+git clone https://github.com/chacal1231/ODIN.git
+cd ODIN/IXP
+```
 
-# 2. Instalar Docker (si no está instalado)
-sudo bash syslog/scripts/01-install-docker.sh
-newgrp docker
+Cada componente se despliega por separado en su host:
 
-# 3. Levantar Graylog (primer componente)
-cd syslog
-bash scripts/02-setup-graylog.sh
-docker compose up -d
+1. **Graylog:** [graylog/README.md](graylog/README.md). Copiar `.env.example`, ejecutar `02-setup-graylog.sh` solo en instalaciones nuevas, `docker compose up -d`.
+2. **LibreNMS:** [LibreNMS/LibreNMS.md](LibreNMS/LibreNMS.md).
+3. **PMACCT/BMP:** [Pmacct/README.md](Pmacct/README.md); incluye la migración desde el ingester anterior.
+4. **Agente:** [ai-agent/OpenClaw/README.md](ai-agent/OpenClaw/README.md). Antes, leer [docs/SECURITY.md](docs/SECURITY.md).
 
-# 4. Verificar
-docker compose ps
-# Acceder a http://odin.example.net:9000
+Pruebas de los clientes del agente, desde la raíz del repositorio:
+
+```bash
+python -m unittest discover -s IXP/ai-agent/OpenClaw/tools -p "test_*.py" -v
 ```
 
 ## Convenciones
 
-- Cada componente tiene su propio `docker-compose.yml` independiente
-- Los archivos `.env` nunca se commitean — se incluye un `.env.example`
-- Las configuraciones de equipos van en `configs/` dentro de cada módulo
-- Los scripts de setup se numeran secuencialmente: `01-install.sh`, `02-configure.sh`
-- Los dashboards de Grafana se exportan como JSON en `dashboards/`
+- Cada componente tiene su propio `docker-compose.yml`.
+- Los `.env` nunca se versionan; cada componente incluye un `.env.example` sin valores.
+- Imágenes y versiones fijadas; no usar `latest`.
+- El agente consulta solo mediante los clientes de `tools/`, nunca con curl, SQL o Lucene escritos por el modelo.
+- Los scripts de setup se numeran: `01-…`, `02-…`.
+
+## Fuera del alcance actual
+
+NetBox, Telegraf/InfluxDB/Grafana, Oxidized, BGPalerter, ExaBGP/GoBGP, SmokePing/RIPE Atlas y Zabbix no tienen configuración en este repositorio. Se añadirán solo con necesidad demostrada.
 
 ## Equipo
 
