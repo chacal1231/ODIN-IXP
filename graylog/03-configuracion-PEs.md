@@ -15,7 +15,7 @@ El input escucha en todas las interfaces del contenedor: el control de origen se
 
 ## 2. Envío de syslog desde los PEs
 
-### Arista EOS (configuración en producción TVYMAS)
+### Arista EOS (configuración en producción IXP COLOMBIA)
 
 ```
 configure terminal

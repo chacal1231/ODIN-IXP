@@ -253,7 +253,7 @@ Ejemplo: `ifOutOctets_rate = 125000000` → 125000000 × 8 / 1e6 = **1000 Mbps =
 
 ### Crear el dashboard
 
-Dashboards (arriba a la derecha) → Create Dashboard → Nombre: `NOC TVYMAS`
+Dashboards (arriba a la derecha) → Create Dashboard → Nombre: `NOC IXP COLOMBIA`
 
 ### Widgets recomendados
 

@@ -5,7 +5,7 @@
 # ODIN — Omniscient Digital Infrastructure Nexus
 > *"Un ojo en cada ruta, un cuervo en cada nodo"*
 
-**ODIN** es la plataforma de observabilidad y el agente de IA de la red de **TVYMAS**. Reúne logs, estado SNMP, tráfico, eventos BGP e inventario del IXP, y un agente (OpenClaw) que consulta esas fuentes en modo solo lectura para diagnosticar y correlacionar incidentes.
+**ODIN** es la plataforma de observabilidad y el agente de IA de la red de **IXP COLOMBIA**. Reúne logs, estado SNMP, tráfico, eventos BGP e inventario del IXP, y un agente (OpenClaw) que consulta esas fuentes en modo solo lectura para diagnosticar y correlacionar incidentes.
 
 El agente presenta hallazgos con fuente y hora, separa hipótesis de hechos e indica qué fuentes faltan. No ejecuta cambios en la red.
 
@@ -88,7 +88,7 @@ NetBox, Telegraf/InfluxDB/Grafana, Oxidized, BGPalerter, ExaBGP/GoBGP, SmokePing
 
 | Rol | Contacto |
 |---|---|
-| Arquitecto de red | TVYMAS NOC |
+| Arquitecto de red | IXP COLOMBIA NOC |
 | Agente AI | ODIN (OpenClaw) |
 
 ## Licencia
