@@ -30,6 +30,7 @@ El proyecto ISP vive en su propio repositorio, [ODIN-ISP](https://github.com/cha
 ```
 ./
 ├── README.md                  ← Este archivo
+├── LICENSE                    ← Licencia MIT
 ├── .github/workflows/ixp.yml  ← CI: pruebas de los clientes y gitleaks
 ├── docs/
 │   ├── SECURITY.md            ← Acciones pendientes, configuración segura del agente, despliegue Graylog
@@ -92,4 +93,4 @@ NetBox, Telegraf/InfluxDB/Grafana, Oxidized, BGPalerter, ExaBGP/GoBGP, SmokePing
 
 ## Licencia
 
-© TVYMAS. Sin licencia de uso publicada: el código es visible, pero no se concede permiso de reutilización.
+Distribuido bajo la licencia [MIT](LICENSE). © 2026 IXP COLOMBIA.
